@@ -1,0 +1,50 @@
+{
+  "name": "deterministic-deps",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GitHub Action to enforce deterministic dependency declarations across ecosystems.",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "bundle": "ncc build src/main.ts --license licenses.txt --source-map --out dist",
+    "format": "prettier --check .",
+    "format:write": "prettier --write .",
+    "lint": "eslint .",
+    "test": "jest --coverage",
+    "all": "npm run lint && npm run test && npm run build && npm run bundle"
+  },
+  "keywords": [
+    "github-action",
+    "dependencies",
+    "supply-chain",
+    "deterministic",
+    "sha-pinning"
+  ],
+  "author": "Brian Corder",
+  "license": "MIT",
+  "dependencies": {
+    "@actions/core": "^1.11.1",
+    "glob": "^11.0.1",
+    "js-yaml": "^4.1.0",
+    "minimatch": "^10.0.1"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^24.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "@vercel/ncc": "^0.38.3",
+    "eslint": "^9.0.0",
+    "jest": "^30.0.0",
+    "prettier": "^3.3.0",
+    "ts-jest": "^29.2.0",
+    "typescript": "^5.6.0"
+  },
+  "overrides": {
+    "undici": "^7.25.0"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

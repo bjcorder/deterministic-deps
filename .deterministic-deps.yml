@@ -1,0 +1,7 @@
+mode: advisory
+severity-threshold: low
+exclude:
+  - deterministic-deps-report/**
+rules: {}
+severity: {}
+allowlist: []

@@ -1,0 +1,55 @@
+name: Deterministic Deps
+author: Brian Corder
+description: Enforce deterministic dependency declarations across ecosystems.
+
+inputs:
+  mode:
+    description: Reporting mode. Use advisory to report only, or enforce to fail at the configured severity threshold.
+    required: false
+    default: advisory
+  path:
+    description: Repository path to scan.
+    required: false
+    default: .
+  config:
+    description: Optional path to a deterministic-deps YAML config file.
+    required: false
+    default: .deterministic-deps.yml
+  include:
+    description: Newline or comma-separated glob patterns to include.
+    required: false
+    default: ''
+  exclude:
+    description: Newline or comma-separated glob patterns to exclude.
+    required: false
+    default: ''
+  severity-threshold:
+    description: Minimum severity that fails the action in enforce mode.
+    required: false
+    default: low
+  sarif:
+    description: Whether to write a SARIF report.
+    required: false
+    default: 'true'
+
+outputs:
+  finding-count:
+    description: Total number of findings.
+  high-count:
+    description: Number of high severity findings.
+  medium-count:
+    description: Number of medium severity findings.
+  low-count:
+    description: Number of low severity findings.
+  report-path:
+    description: Path to the Markdown report.
+  sarif-path:
+    description: Path to the SARIF report, when enabled.
+
+runs:
+  using: node24
+  main: dist/index.js
+
+branding:
+  icon: lock
+  color: blue

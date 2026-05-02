@@ -1,0 +1,123 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { renderMarkdown, renderSarif } from '../src/report'
+import { scan } from '../src/scanner'
+import { shouldReportFailure } from '../src/rules'
+
+function tempRepo(): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'deterministic-deps-'))
+}
+
+function write(root: string, file: string, content: string): void {
+  const target = path.join(root, file)
+  fs.mkdirSync(path.dirname(target), { recursive: true })
+  fs.writeFileSync(target, content, 'utf8')
+}
+
+describe('deterministic-deps scanner', () => {
+  it('flags broad non-deterministic dependency declarations', async () => {
+    const root = tempRepo()
+    write(root, '.github/workflows/ci.yml', 'steps:\n  - uses: actions/checkout@v4\n')
+    write(root, 'Dockerfile', 'FROM node:latest\n')
+    write(
+      root,
+      'main.tf',
+      'module "x" { source = "git::https://github.com/acme/mod.git?ref=main" }\n'
+    )
+    write(root, 'package.json', JSON.stringify({ dependencies: { leftpad: '^1.0.0' } }, null, 2))
+    write(root, 'requirements.txt', 'requests==2.32.0\n')
+    write(root, 'go.mod', 'module example.com/app\n')
+    write(root, 'Cargo.toml', '[dependencies]\nserde = "1"\n')
+    write(root, 'pom.xml', '<version>1.0-SNAPSHOT</version>\n')
+    write(
+      root,
+      'Gemfile',
+      "gem 'rails', git: 'https://github.com/rails/rails.git', branch: 'main'\n"
+    )
+
+    const result = await scan({ root, include: [], exclude: [], config: {} })
+    const ruleIds = result.findings.map((finding) => finding.ruleId)
+
+    expect(ruleIds).toEqual(
+      expect.arrayContaining([
+        'github-actions/sha-pin',
+        'containers/image-digest',
+        'terraform/git-module-sha',
+        'node/lockfile-required',
+        'node/non-deterministic-spec',
+        'python/hash-pinned-requirement',
+        'go/sum-required',
+        'rust/lockfile-required',
+        'jvm/dynamic-version',
+        'ruby/lockfile-required',
+        'ruby/git-ref-sha'
+      ])
+    )
+  })
+
+  it('allows deterministic declarations with committed lockfiles or hashes', async () => {
+    const root = tempRepo()
+    const sha = '0123456789abcdef0123456789abcdef01234567'
+    write(root, '.github/workflows/ci.yml', `steps:\n  - uses: actions/checkout@${sha}\n`)
+    write(root, 'Dockerfile', `FROM node:24@sha256:${'a'.repeat(64)}\n`)
+    write(
+      root,
+      'main.tf',
+      `module "x" { source = "git::https://github.com/acme/mod.git?ref=${sha}" }\n`
+    )
+    write(root, '.terraform.lock.hcl', '# lock\n')
+    write(root, 'package.json', JSON.stringify({ dependencies: { leftpad: '1.0.0' } }, null, 2))
+    write(root, 'package-lock.json', '{}\n')
+    write(root, 'requirements.txt', `requests==2.32.0 --hash=sha256:${'b'.repeat(64)}\n`)
+    write(root, 'go.mod', 'module example.com/app\n')
+    write(root, 'go.sum', 'example.com/module v1.0.0 h1:abc\n')
+    write(root, 'Cargo.toml', '[dependencies]\nserde = "1"\n')
+    write(root, 'Cargo.lock', '# lock\n')
+    write(root, 'Gemfile', "gem 'rails'\n")
+    write(root, 'Gemfile.lock', '# lock\n')
+
+    const result = await scan({ root, include: [], exclude: [], config: {} })
+
+    expect(result.findings).toEqual([])
+  })
+
+  it('supports allowlists, severity overrides, and enforce thresholds', async () => {
+    const root = tempRepo()
+    write(root, 'Dockerfile', 'FROM node:latest\n')
+
+    const result = await scan({
+      root,
+      include: [],
+      exclude: [],
+      config: {
+        severityOverrides: { 'containers/image-digest': 'low' },
+        allowlist: []
+      }
+    })
+
+    expect(result.findings).toHaveLength(1)
+    expect(result.findings[0].severity).toBe('low')
+    expect(shouldReportFailure(result.findings, 'medium')).toBe(false)
+    expect(shouldReportFailure(result.findings, 'low')).toBe(true)
+
+    const allowed = await scan({
+      root,
+      include: [],
+      exclude: [],
+      config: {
+        allowlist: [{ file: 'Dockerfile', ruleId: 'containers/image-digest' }]
+      }
+    })
+    expect(allowed.findings).toEqual([])
+  })
+
+  it('renders markdown and sarif reports', async () => {
+    const root = tempRepo()
+    write(root, 'Dockerfile', 'FROM node:latest\n')
+    const result = await scan({ root, include: [], exclude: [], config: {} })
+
+    expect(renderMarkdown(result.findings)).toContain('containers/image-digest')
+    expect(JSON.stringify(renderSarif(result.findings))).toContain('deterministic-deps')
+  })
+})

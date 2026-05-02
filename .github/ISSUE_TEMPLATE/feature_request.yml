@@ -1,0 +1,19 @@
+name: Feature request
+description: Suggest a new ecosystem, rule, or reporting feature.
+title: '[Feature]: '
+labels: ['enhancement']
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What deterministic dependency gap should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What rule or behavior would you like?
+    validations:
+      required: true

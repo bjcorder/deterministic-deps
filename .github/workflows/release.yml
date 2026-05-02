@@ -1,0 +1,31 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    name: Verify release artifact
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run all
+      - name: Move major tag
+        if: startsWith(github.event.release.tag_name, 'v')
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: |
+          MAJOR="${TAG_NAME%%.*}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f "$MAJOR" "$TAG_NAME"
+          git push -f origin "$MAJOR"
