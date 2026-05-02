@@ -10,6 +10,10 @@ GitHub Actions, Docker images, Terraform git modules, and git-based package depe
 
 npm, Yarn, pnpm, Poetry, uv, Pipenv, Go, Rust, Bundler, Maven, and Gradle often rely on lockfiles or checksum files for deterministic resolution. For these ecosystems, the action checks for committed lock/integrity files and rejects common floating declarations.
 
+## Parser Coverage
+
+GitHub Actions workflows, Compose files, and devcontainer JSON files are parsed before rules are evaluated so comments and unrelated text are ignored. Terraform/OpenTofu checks are block-aware for module sources and provider constraints.
+
 ## Known Limits
 
 - The scanner intentionally avoids network calls.
