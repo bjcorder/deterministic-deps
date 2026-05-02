@@ -22,6 +22,15 @@ export interface Config {
   ecosystems?: EcosystemOptions
 }
 
+export interface ConfigDiagnostic {
+  message: string
+}
+
+export interface ConfigLoadResult {
+  config: Config
+  diagnostics: ConfigDiagnostic[]
+}
+
 export interface EcosystemOptions {
   go?: {
     requireGoSum?: boolean
