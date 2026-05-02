@@ -90,7 +90,8 @@ function parseYamlConfig(content: string, configPath: string): unknown {
     return yaml.load(content)
   } catch (error) {
     throw new Error(
-      `Unable to parse ${configPath}: ${error instanceof Error ? error.message : String(error)}`
+      `Unable to parse ${configPath}: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error }
     )
   }
 }
