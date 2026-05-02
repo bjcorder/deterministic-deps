@@ -1,0 +1,14 @@
+{
+  "rules": {
+    "python/hash-pinned-requirement": false
+  },
+  "severityOverrides": {
+    "containers/image-digest": "low"
+  },
+  "allowlist": [
+    {
+      "file": "Gemfile",
+      "ruleId": "ruby/lockfile-required"
+    }
+  ]
+}

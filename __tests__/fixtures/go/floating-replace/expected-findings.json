@@ -1,0 +1,16 @@
+[
+  {
+    "ruleId": "go/sum-required",
+    "ecosystem": "go",
+    "file": "go.mod",
+    "line": 1,
+    "severity": "high"
+  },
+  {
+    "ruleId": "go/git-replace-sha",
+    "ecosystem": "go",
+    "file": "go.mod",
+    "line": 3,
+    "severity": "medium"
+  }
+]

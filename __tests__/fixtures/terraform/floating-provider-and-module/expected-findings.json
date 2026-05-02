@@ -1,0 +1,16 @@
+[
+  {
+    "ruleId": "terraform/git-module-sha",
+    "ecosystem": "terraform",
+    "file": "main.tf",
+    "line": 2,
+    "severity": "high"
+  },
+  {
+    "ruleId": "terraform/provider-lock",
+    "ecosystem": "terraform",
+    "file": "main.tf",
+    "line": 9,
+    "severity": "medium"
+  }
+]

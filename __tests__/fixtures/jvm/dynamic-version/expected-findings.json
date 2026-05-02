@@ -1,0 +1,16 @@
+[
+  {
+    "ruleId": "jvm/dynamic-version",
+    "ecosystem": "jvm",
+    "file": "build.gradle",
+    "line": 2,
+    "severity": "medium"
+  },
+  {
+    "ruleId": "jvm/dynamic-version",
+    "ecosystem": "jvm",
+    "file": "pom.xml",
+    "line": 4,
+    "severity": "medium"
+  }
+]
