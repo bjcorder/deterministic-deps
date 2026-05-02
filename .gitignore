@@ -1,6 +1,7 @@
 node_modules/
 coverage/
 lib/
+deterministic-deps-report/
 *.log
 .env
 .DS_Store

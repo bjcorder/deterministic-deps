@@ -1,11 +1,22 @@
 # Releasing
 
-1. Create a branch and make source changes.
-2. Run `npm run all`.
-3. Confirm `dist/index.js` is updated and committed.
-4. Merge through a pull request.
-5. Create a semver tag such as `v1.0.0`.
-6. Move the major tag, such as `v1`, to the same commit.
-7. Publish a GitHub release and optionally publish the action to GitHub Marketplace.
+This repository publishes a packaged JavaScript action. The bundled `dist/index.js` is part of the release artifact and must match `src/`.
 
-Consumers can reference `bjcorder/deterministic-deps@v1`, but commit-SHA pinning gives the strongest supply-chain guarantees.
+## Release Checklist
+
+1. Run `npm ci`.
+2. Run `npm run all`.
+3. Confirm `git diff --exit-code dist package-lock.json` is clean.
+4. Update `CHANGELOG.md`.
+5. Create a semantic version tag such as `v1.0.0`.
+6. Move or create the major tag, such as `v1`, after validating the release.
+
+## Versioning
+
+Use semantic versioning:
+
+- Patch: bug fixes and false-positive reductions.
+- Minor: new rules, new ecosystems, new outputs, or new config options.
+- Major: behavior changes that can fail workflows differently in enforce mode.
+
+Major version tags should remain stable entrypoints for users while patch tags provide exact release provenance.

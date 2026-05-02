@@ -1,15 +1,13 @@
 # deterministic-deps
 
-[![CI](https://github.com/bjcorder/deterministic-deps/actions/workflows/ci.yml/badge.svg)](https://github.com/bjcorder/deterministic-deps/actions/workflows/ci.yml)
+`deterministic-deps` is a GitHub Action that reports dependency declarations that can drift over time. It is language-agnostic, works by static analysis only, and favors SHA, digest, hash, exact-version, and lockfile based determinism.
 
-`deterministic-deps` is a GitHub Action that scans dependency declaration files and reports references that are not deterministic. It is language-agnostic, static-only, and focused on SHA pinning, container digests, exact versions with committed lockfiles, and ecosystem-native integrity files.
-
-The default mode is advisory: the action reports findings without failing CI. Switch to enforce mode when you are ready to block non-deterministic declarations.
+The default mode is advisory: the action emits annotations, writes a Markdown report, and produces SARIF without failing CI. Switch to enforce mode when your project is ready to block non-deterministic declarations.
 
 ## Quick Start
 
 ```yaml
-name: deterministic deps
+name: dependency determinism
 
 on:
   pull_request:
@@ -23,13 +21,13 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@<full-commit-sha>
       - uses: bjcorder/deterministic-deps@v1
         with:
           mode: advisory
 ```
 
-To fail CI when findings are present:
+To fail builds once findings are actionable:
 
 ```yaml
 - uses: bjcorder/deterministic-deps@v1
@@ -38,42 +36,65 @@ To fail CI when findings are present:
     severity-threshold: medium
 ```
 
-For maximum supply-chain determinism, pin this action by commit SHA instead of a moving tag.
-
 ## Inputs
 
-| Input                | Default                   | Description                                                                           |
-| -------------------- | ------------------------- | ------------------------------------------------------------------------------------- |
-| `mode`               | `advisory`                | Use `advisory` to report only, or `enforce` to fail when findings meet the threshold. |
-| `path`               | `.`                       | Repository path to scan.                                                              |
-| `config`             | `.deterministic-deps.yml` | Optional config file path, relative to `path`.                                        |
-| `include`            | supported files           | Newline or comma-separated glob patterns to include.                                  |
-| `exclude`            | dependency/build dirs     | Newline or comma-separated glob patterns to exclude.                                  |
-| `severity-threshold` | `low`                     | Minimum severity that fails the action in `enforce` mode.                             |
-| `sarif`              | `true`                    | Write a SARIF report in addition to Markdown.                                         |
+| Input                | Default                    | Description                                                                     |
+| -------------------- | -------------------------- | ------------------------------------------------------------------------------- |
+| `mode`               | `advisory`                 | Use `advisory` to report only or `enforce` to fail at the configured threshold. |
+| `path`               | `.`                        | Repository path to scan.                                                        |
+| `config`             | `.deterministic-deps.yml`  | Optional YAML config path, relative to `path`.                                  |
+| `include`            | supported dependency files | Newline or comma-separated glob patterns.                                       |
+| `exclude`            | common vendor/build dirs   | Newline or comma-separated glob patterns.                                       |
+| `severity-threshold` | `low`                      | Minimum severity that fails the action in enforce mode.                         |
+| `sarif`              | `true`                     | Write a SARIF report for code scanning upload.                                  |
 
 ## Outputs
 
-| Output          | Description                             |
-| --------------- | --------------------------------------- |
-| `finding-count` | Total number of findings.               |
-| `high-count`    | Number of high severity findings.       |
-| `medium-count`  | Number of medium severity findings.     |
-| `low-count`     | Number of low severity findings.        |
-| `report-path`   | Path to the Markdown report.            |
-| `sarif-path`    | Path to the SARIF report, when enabled. |
+| Output          | Description                     |
+| --------------- | ------------------------------- |
+| `finding-count` | Total findings.                 |
+| `high-count`    | High severity findings.         |
+| `medium-count`  | Medium severity findings.       |
+| `low-count`     | Low severity findings.          |
+| `report-path`   | Markdown report path.           |
+| `sarif-path`    | SARIF report path when enabled. |
 
 ## Supported Ecosystems
 
-The v1 scanner covers GitHub Actions, Dockerfiles, Docker Compose, devcontainers, Terraform/OpenTofu, npm/Yarn/pnpm, Python requirements and project files, Go modules, Rust Cargo manifests, Maven, Gradle, and Ruby Bundler.
+V1 scans GitHub Actions, Docker and Compose files, devcontainers, Terraform/OpenTofu, npm/Yarn/pnpm, Python, Go, Rust, Maven/Gradle, and Ruby. See [docs/ecosystems.md](docs/ecosystems.md) and [docs/rules.md](docs/rules.md) for the rule catalog.
 
-See [docs/rules.md](docs/rules.md), [docs/ecosystems.md](docs/ecosystems.md), and [docs/configuration.md](docs/configuration.md) for the full rule and configuration model.
+## Configuration
+
+```yaml
+mode: advisory
+severity-threshold: low
+
+exclude:
+  - fixtures/**
+
+rules:
+  containers/image-digest: true
+  node/non-deterministic-spec: true
+
+severity:
+  python/hash-pinned-requirement: low
+
+allowlist:
+  - file: legacy/Dockerfile
+    ruleId: containers/image-digest
+```
+
+See [docs/configuration.md](docs/configuration.md) for the full schema.
 
 ## Local Development
 
 ```bash
-npm install
+npm ci
 npm run all
 ```
 
-The packaged action entrypoint is committed at `dist/index.js`. Run `npm run bundle` after source changes and verify that `dist/` is up to date before releasing.
+The bundled `dist/index.js` is committed so the action can run directly from repository refs. Run `npm run bundle` after source changes and commit the updated `dist/` output.
+
+## Security
+
+This action performs static analysis only. It does not fetch package registries, clone dependency sources, or rewrite dependency declarations. Please report vulnerabilities according to [SECURITY.md](SECURITY.md).

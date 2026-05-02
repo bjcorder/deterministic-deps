@@ -1,4 +1,4 @@
-name: CodeQL
+name: codeql
 
 on:
   pull_request:
@@ -6,7 +6,7 @@ on:
     branches:
       - main
   schedule:
-    - cron: '24 4 * * 1'
+    - cron: '37 9 * * 1'
 
 permissions:
   contents: read
@@ -14,11 +14,10 @@ permissions:
 
 jobs:
   analyze:
-    name: Analyze
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: github/codeql-action/init@v3
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: github/codeql-action/init@ed410739ba306e4ebe5e123421a6bd694e494a2b
         with:
           languages: javascript-typescript
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@ed410739ba306e4ebe5e123421a6bd694e494a2b

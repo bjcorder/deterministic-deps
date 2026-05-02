@@ -50,7 +50,7 @@ export default [
     }
   },
   {
-    files: ['*.js'],
+    files: ['**/*.js'],
     languageOptions: {
       globals: nodeGlobals
     }

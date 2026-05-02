@@ -6,10 +6,10 @@ Security fixes are provided for the latest released major version.
 
 ## Reporting a Vulnerability
 
-Please report suspected vulnerabilities privately through GitHub Security Advisories when available, or by contacting the repository maintainer.
+Please report suspected vulnerabilities through GitHub private vulnerability reporting when available, or by contacting the maintainer directly.
 
-Do not open a public issue for a vulnerability until a maintainer has had a reasonable chance to investigate.
+Do not open a public issue for sensitive reports. Include a minimal reproduction, affected version, and any known impact.
 
 ## Scope
 
-`deterministic-deps` performs static repository analysis. Reports about command injection, unsafe parsing, path traversal, dependency confusion, or incorrect supply-chain guidance are in scope.
+`deterministic-deps` performs local static analysis. It should not contact package registries, clone dependencies, or execute dependency code. Bugs that cause unexpected network access, command execution, path traversal, or incorrect CI failure behavior are in scope.

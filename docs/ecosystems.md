@@ -1,23 +1,20 @@
-# Ecosystems
+# Ecosystem Notes
 
-This action is static-only. It does not call registries, resolve package metadata, or rewrite files. Each ecosystem rule checks declarations and nearby lock/integrity files that can be evaluated from the repository contents.
+The action uses conservative static checks. It does not resolve remote refs, inspect package registries, or verify that a digest exists.
 
-## Supported Files
+## SHA and Digest Native Ecosystems
 
-| Ecosystem          | Files                                                                                        |
-| ------------------ | -------------------------------------------------------------------------------------------- |
-| GitHub Actions     | `.github/workflows/*.yml`, `.github/workflows/*.yaml`, root `action.yml`, root `action.yaml` |
-| Containers         | `Dockerfile`, `Dockerfile.*`, Compose YAML, `.devcontainer/devcontainer.json`                |
-| Terraform/OpenTofu | `*.tf`, `.terraform.lock.hcl`                                                                |
-| Node.js            | `package.json`, npm/Yarn/pnpm lockfiles                                                      |
-| Python             | `requirements*.txt`, `pyproject.toml`, `Pipfile`, Poetry/uv/Pipenv lockfiles                 |
-| Go                 | `go.mod`, `go.sum`                                                                           |
-| Rust               | `Cargo.toml`, `Cargo.lock`                                                                   |
-| JVM                | `pom.xml`, `build.gradle`, `build.gradle.kts`                                                |
-| Ruby               | `Gemfile`, `Gemfile.lock`                                                                    |
+GitHub Actions, Docker images, Terraform git modules, and git-based package dependencies can usually be pinned to immutable commits or content digests. These are high-signal checks and most violations are high severity.
 
-## Design Notes
+## Lockfile Native Ecosystems
 
-Broad language support means the action should avoid ecosystem-specific network resolution in v1. The rules favor clear, explainable checks over speculative interpretation.
+npm, Yarn, pnpm, Poetry, uv, Pipenv, Go, Rust, Bundler, Maven, and Gradle often rely on lockfiles or checksum files for deterministic resolution. For these ecosystems, the action checks for committed lock/integrity files and rejects common floating declarations.
 
-Some package managers support deterministic installs through lockfiles rather than SHA pins in every declaration. In those ecosystems, missing lockfiles are treated as high-signal findings.
+## Known Limits
+
+- The scanner intentionally avoids network calls.
+- It does not parse every legal grammar branch for every package manager.
+- It may flag library repositories that intentionally omit lockfiles. Use `allowlist` or rule configuration for those cases.
+- It treats Maven and Gradle dynamic versions as non-deterministic but does not yet require a specific verification metadata format.
+
+These limits keep v1 predictable while leaving room for deeper ecosystem-specific parsers later.

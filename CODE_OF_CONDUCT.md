@@ -1,7 +1,7 @@
 # Code of Conduct
 
-This project follows the [Contributor Covenant](https://www.contributor-covenant.org/version/2/1/code_of_conduct/) Code of Conduct.
+This project is committed to a welcoming, respectful, and practical community.
 
-Be respectful, assume good intent, and help keep the project welcoming for contributors with different backgrounds and experience levels.
+Please be kind, assume good intent, and focus feedback on the work. Harassment, discriminatory language, personal attacks, and sustained disruptive behavior are not acceptable.
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported through the security or maintainer contact channels listed in this repository.
+Maintainers may remove comments, close issues, or block participants who violate these expectations. If you need to report a concern, use the security/contact information in this repository or contact the maintainer privately.

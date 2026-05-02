@@ -1,23 +1,25 @@
 # Contributing
 
-Thanks for helping improve `deterministic-deps`.
+Thanks for helping make dependency declarations more deterministic.
 
 ## Development
 
 ```bash
-npm install
+npm ci
 npm run all
 ```
 
-Rule changes should include unit tests with both passing and failing examples. Keep rules conservative and remediation messages actionable.
+Rules live in `src/rules.ts`, scanner/reporting code lives under `src/`, and tests live in `__tests__/`.
 
 ## Pull Requests
 
-- Describe the rule or behavior change.
-- Include tests for new findings and non-findings.
-- Run `npm run all`.
-- Rebuild `dist/index.js` with `npm run bundle` when source changes.
+- Keep rules conservative and explain remediation clearly.
+- Add fixtures or unit tests for every new rule and false-positive fix.
+- Run `npm run bundle` after source changes and commit `dist/`.
+- Update docs when public behavior changes.
 
-## Rule Philosophy
+## Design Principles
 
-Prefer checks that can be explained from the file contents alone. Avoid network lookups, registry-specific heuristics, and autofix behavior unless the project explicitly adopts them later.
+- Static analysis only in v1.
+- Prefer clear findings over clever inference.
+- Make advisory adoption easy, then let users opt into enforcement.

@@ -1,6 +1,6 @@
 # Configuration
 
-The action reads `.deterministic-deps.yml` by default. Use the `config` input to point to another file.
+`deterministic-deps` reads `.deterministic-deps.yml` from the scan root by default. Action inputs override matching config values.
 
 ```yaml
 mode: advisory
@@ -8,40 +8,37 @@ severity-threshold: low
 
 include:
   - '**/package.json'
-  - '**/requirements*.txt'
+  - '**/Dockerfile'
 
 exclude:
+  - fixtures/**
   - vendor/**
-  - examples/**
 
 rules:
-  node/non-deterministic-spec: true
-  rust/lockfile-required: false
+  containers/image-digest: true
+  python/hash-pinned-requirement: false
 
 severity:
-  containers/image-digest: high
+  node/non-deterministic-spec: low
 
 allowlist:
-  - file: examples/Dockerfile
+  - file: legacy/**
     ruleId: containers/image-digest
-  - ecosystem: python
-    ruleId: python/hash-pinned-requirement
+  - file: tools/requirements.txt
+    ecosystem: python
+    line: 12
 ```
 
-## Modes
+## Fields
 
-`advisory` reports findings, emits annotations, writes a Markdown report, and writes SARIF when enabled. It does not fail the workflow.
+| Field                | Description                                                               |
+| -------------------- | ------------------------------------------------------------------------- |
+| `mode`               | `advisory` or `enforce`.                                                  |
+| `severity-threshold` | `low`, `medium`, or `high`; used only in enforce mode.                    |
+| `include`            | Glob patterns to scan.                                                    |
+| `exclude`            | Glob patterns to skip in addition to built-in vendor/build ignores.       |
+| `rules`              | Map of rule id to `true` or `false`.                                      |
+| `severity`           | Map of rule id to severity override.                                      |
+| `allowlist`          | Finding suppressions by file glob, rule id, ecosystem, and optional line. |
 
-`enforce` performs the same reporting but fails if at least one finding meets or exceeds `severity-threshold`.
-
-## Globs
-
-`include` and `exclude` accept standard glob patterns relative to the scan root. Inputs passed in the workflow override config-file include/exclude values.
-
-Default excludes skip common dependency, build, cache, and vendor directories.
-
-## Allowlist
-
-Allowlist entries can match by file glob, rule id, ecosystem, and line. All provided fields must match the finding.
-
-Allowlist entries are intended for documented exceptions. Prefer fixing dependency declarations when possible.
+Allowlist entries should be narrow and temporary. Prefer fixing declarations or adding lockfiles when practical.

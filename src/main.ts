@@ -17,7 +17,8 @@ async function run(): Promise<void> {
   )
   const include = splitPatterns(core.getInput('include'))
   const exclude = splitPatterns(core.getInput('exclude'))
-  const sarif = core.getBooleanInput('sarif')
+  const sarifInput = core.getInput('sarif') || 'true'
+  const sarif = sarifInput.toLowerCase() === 'true'
 
   const result = await scan({
     root: scanRoot,
@@ -44,14 +45,12 @@ async function run(): Promise<void> {
   core.setOutput('report-path', reports.markdownPath)
   core.setOutput('sarif-path', reports.sarifPath ?? '')
 
-  await core.summary
-    .addHeading('deterministic-deps')
-    .addRaw(`Scanned ${result.scannedFiles.length} files.\n\n`)
-    .addRaw(
-      `Findings: ${result.findings.length} (${counts.high} high, ${counts.medium} medium, ${counts.low} low)\n\n`
-    )
-    .addRaw(`Report: ${reports.markdownPath}\n`)
-    .write()
+  await writeSummary(
+    result.scannedFiles.length,
+    result.findings.length,
+    counts,
+    reports.markdownPath
+  )
 
   if (mode === 'enforce' && shouldReportFailure(result.findings, severityThreshold)) {
     core.setFailed(
@@ -63,3 +62,25 @@ async function run(): Promise<void> {
 run().catch((error: unknown) => {
   core.setFailed(error instanceof Error ? error.message : String(error))
 })
+
+async function writeSummary(
+  scannedFiles: number,
+  findingCount: number,
+  counts: { high: number; medium: number; low: number },
+  markdownPath: string
+): Promise<void> {
+  try {
+    await core.summary
+      .addHeading('deterministic-deps')
+      .addRaw(`Scanned ${scannedFiles} files.\n\n`)
+      .addRaw(
+        `Findings: ${findingCount} (${counts.high} high, ${counts.medium} medium, ${counts.low} low)\n\n`
+      )
+      .addRaw(`Report: ${markdownPath}\n`)
+      .write()
+  } catch (error) {
+    core.warning(
+      `Unable to write job summary: ${error instanceof Error ? error.message : String(error)}`
+    )
+  }
+}

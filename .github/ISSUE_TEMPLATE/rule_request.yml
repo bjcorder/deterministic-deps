@@ -1,0 +1,19 @@
+name: Rule request
+description: Request a new ecosystem, rule, or detection improvement.
+title: '[Rule]: '
+labels: ['enhancement']
+body:
+  - type: input
+    id: ecosystem
+    attributes:
+      label: Ecosystem
+      placeholder: npm, Python, Docker, Terraform, ...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Describe the deterministic declaration you want enforced.
+    validations:
+      required: true

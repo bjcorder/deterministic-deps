@@ -1,7 +1,8 @@
 mode: advisory
 severity-threshold: low
+
 exclude:
+  - __tests__/**
   - deterministic-deps-report/**
-rules: {}
-severity: {}
+
 allowlist: []

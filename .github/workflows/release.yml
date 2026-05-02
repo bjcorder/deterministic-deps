@@ -1,31 +1,22 @@
-name: Release
+name: release
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v*.*.*'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  verify:
-    name: Verify release artifact
+  validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 24
           cache: npm
       - run: npm ci
       - run: npm run all
-      - name: Move major tag
-        if: startsWith(github.event.release.tag_name, 'v')
-        env:
-          TAG_NAME: ${{ github.event.release.tag_name }}
-        run: |
-          MAJOR="${TAG_NAME%%.*}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -f "$MAJOR" "$TAG_NAME"
-          git push -f origin "$MAJOR"
+      - run: git diff --exit-code -- dist/index.js dist/index.js.map dist/licenses.txt
