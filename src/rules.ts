@@ -16,6 +16,7 @@ interface FileContext {
   file: string
   absolutePath: string
   content: string
+  config: Config
   lines: string[]
 }
 
@@ -56,6 +57,7 @@ export function evaluateFile(
     file,
     absolutePath,
     content,
+    config,
     lines: content.split(/\r?\n/)
   }
 
@@ -260,7 +262,12 @@ function checkTerraform(context: FileContext): Finding[] {
   for (const block of blocks.filter(isTerraformProviderBlock)) {
     for (const line of block.lines) {
       const versionMatch = line.text.match(/\bversion\s*=\s*"([^"]+)"/)
-      if (!versionMatch || hasTerraformLock || isExactVersion(versionMatch[1])) {
+      if (
+        !versionMatch ||
+        hasTerraformLock ||
+        isExactVersion(versionMatch[1]) ||
+        !ecosystemBoolean(context.config, 'terraform', 'requireProviderLock', true)
+      ) {
         continue
       }
 
@@ -300,7 +307,12 @@ function checkTerraform(context: FileContext): Finding[] {
     }
 
     const versionMatch = stripped.match(/\bversion\s*=\s*"([^"]+)"/)
-    if (versionMatch && !hasTerraformLock && !isExactVersion(versionMatch[1])) {
+    if (
+      versionMatch &&
+      !hasTerraformLock &&
+      !isExactVersion(versionMatch[1]) &&
+      ecosystemBoolean(context.config, 'terraform', 'requireProviderLock', true)
+    ) {
       findings.push(
         finding(
           'terraform/provider-lock',
@@ -333,7 +345,11 @@ function checkNode(context: FileContext): Finding[] {
     return []
   }
 
-  if (!hasLock && hasRuntimeDependencies(json)) {
+  if (
+    !hasLock &&
+    hasRuntimeDependencies(json) &&
+    ecosystemBoolean(context.config, 'node', 'requireLockfile', true)
+  ) {
     findings.push(
       finding(
         'node/lockfile-required',
@@ -349,7 +365,13 @@ function checkNode(context: FileContext): Finding[] {
 
   for (const [section, dependencies] of dependencySections(json)) {
     for (const [name, spec] of Object.entries(dependencies)) {
-      if (typeof spec !== 'string' || isNodeSpecDeterministic(spec)) {
+      if (
+        typeof spec !== 'string' ||
+        isNodeSpecDeterministic(spec) ||
+        (hasLock &&
+          ecosystemBoolean(context.config, 'node', 'allowVersionRangesWithLockfile', false) &&
+          isNodeRegistryVersionSpec(spec))
+      ) {
         continue
       }
 
@@ -406,7 +428,11 @@ function checkPython(context: FileContext): Finding[] {
       return
     }
 
-    if (/[<>=~!]=/.test(trimmed) && (!/==[^=]/.test(trimmed) || !trimmed.includes('--hash='))) {
+    if (
+      ecosystemBoolean(context.config, 'python', 'requireRequirementHashes', true) &&
+      /[<>=~!]=/.test(trimmed) &&
+      (!/==[^=]/.test(trimmed) || !trimmed.includes('--hash='))
+    ) {
       findings.push(
         finding(
           'python/hash-pinned-requirement',
@@ -427,7 +453,10 @@ function checkPython(context: FileContext): Finding[] {
 function checkPythonProjectFile(context: FileContext): Finding[] {
   const directory = path.dirname(context.absolutePath)
   const locks = ['poetry.lock', 'uv.lock', 'Pipfile.lock']
-  if (locks.some((lock) => fs.existsSync(path.join(directory, lock)))) {
+  if (
+    !ecosystemBoolean(context.config, 'python', 'requireProjectLockfile', true) ||
+    locks.some((lock) => fs.existsSync(path.join(directory, lock)))
+  ) {
     return []
   }
 
@@ -451,7 +480,10 @@ function checkGo(context: FileContext): Finding[] {
 
   const findings: Finding[] = []
   const directory = path.dirname(context.absolutePath)
-  if (!fs.existsSync(path.join(directory, 'go.sum'))) {
+  if (
+    !fs.existsSync(path.join(directory, 'go.sum')) &&
+    ecosystemBoolean(context.config, 'go', 'requireGoSum', true)
+  ) {
     findings.push(
       finding(
         'go/sum-required',
@@ -491,7 +523,10 @@ function checkRust(context: FileContext): Finding[] {
 
   const findings: Finding[] = []
   const directory = path.dirname(context.absolutePath)
-  if (!fs.existsSync(path.join(directory, 'Cargo.lock'))) {
+  if (
+    !fs.existsSync(path.join(directory, 'Cargo.lock')) &&
+    ecosystemBoolean(context.config, 'rust', 'requireLockfile', true)
+  ) {
     findings.push(
       finding(
         'rust/lockfile-required',
@@ -558,7 +593,10 @@ function checkRuby(context: FileContext): Finding[] {
 
   const findings: Finding[] = []
   const directory = path.dirname(context.absolutePath)
-  if (!fs.existsSync(path.join(directory, 'Gemfile.lock'))) {
+  if (
+    !fs.existsSync(path.join(directory, 'Gemfile.lock')) &&
+    ecosystemBoolean(context.config, 'ruby', 'requireLockfile', true)
+  ) {
     findings.push(
       finding(
         'ruby/lockfile-required',
@@ -767,6 +805,20 @@ function isNodeSpecDeterministic(spec: string): boolean {
     return true
   }
   return /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(spec)
+}
+
+function isNodeRegistryVersionSpec(spec: string): boolean {
+  return !/^(git\+|git:|github:|https?:|ssh:|file:|workspace:|link:|portal:|patch:)/.test(spec)
+}
+
+function ecosystemBoolean(
+  config: Config,
+  ecosystem: string,
+  key: string,
+  fallback: boolean
+): boolean {
+  const value = config.ecosystems?.[ecosystem]?.[key]
+  return typeof value === 'boolean' ? value : fallback
 }
 
 function lineForText(lines: string[], text: string): number {
