@@ -7,5 +7,7 @@ All notable changes to this project will be documented in this file.
 - Initial TypeScript GitHub Action implementation.
 - Added advisory and enforce modes.
 - Added static rules for GitHub Actions, containers, Terraform/OpenTofu, Node.js, Python, Go, Rust, JVM, and Ruby.
+- Added parser-backed YAML and JSON checks for GitHub Actions, Compose, and devcontainer image references.
+- Added block-aware Terraform module and provider checks.
 - Added Markdown and SARIF report generation.
 - Added open-source project documentation and CI scaffolding.

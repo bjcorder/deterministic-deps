@@ -44590,6 +44590,7 @@ exports.shouldReportFailure = shouldReportFailure;
 exports.defaultExcludeMatchers = defaultExcludeMatchers;
 const node_fs_1 = __importDefault(__nccwpck_require__(3024));
 const node_path_1 = __importDefault(__nccwpck_require__(6760));
+const js_yaml_1 = __importDefault(__nccwpck_require__(4281));
 const minimatch_1 = __nccwpck_require__(6507);
 const constants_1 = __nccwpck_require__(7242);
 const handlers = [
@@ -44625,41 +44626,60 @@ function checkGithubActions(context) {
         return [];
     }
     const findings = [];
-    context.lines.forEach((line, index) => {
+    const references = parseYamlDocuments(context.content).flatMap((document) => collectStringProperties(document, 'uses'));
+    for (const reference of references) {
+        const line = lineForYamlScalar(context.lines, 'uses', reference);
+        const findingForReference = checkActionReference(context.file, line, reference);
+        if (findingForReference) {
+            findings.push(findingForReference);
+        }
+    }
+    if (references.length > 0) {
+        return findings;
+    }
+    return checkGithubActionsWithLineFallback(context);
+}
+function checkActionReference(file, line, reference) {
+    if (reference.startsWith('./') || reference.startsWith('../')) {
+        return undefined;
+    }
+    if (reference.startsWith('docker://')) {
+        if (constants_1.DIGEST_PATTERN.test(reference)) {
+            return undefined;
+        }
+        return finding('github-actions/docker-digest', 'github-actions', file, line, 'high', `Docker action reference '${reference}' is not pinned by digest.`, 'Use a docker:// image reference with an @sha256 digest.');
+    }
+    const atIndex = reference.lastIndexOf('@');
+    if (atIndex === -1) {
+        return finding('github-actions/sha-pin', 'github-actions', file, line, 'high', `Action '${reference}' is missing an immutable commit SHA ref.`, 'Pin external actions to a full 40-character commit SHA.');
+    }
+    const ref = reference.slice(atIndex + 1);
+    if (constants_1.SHA_PATTERN.test(ref)) {
+        return undefined;
+    }
+    return finding(constants_1.SHORT_SHA_PATTERN.test(ref) ? 'github-actions/full-sha' : 'github-actions/sha-pin', 'github-actions', file, line, 'high', `Action '${reference}' is pinned to '${ref}', not a full commit SHA.`, 'Replace branch, tag, or short SHA refs with a full 40-character commit SHA.');
+}
+function checkGithubActionsWithLineFallback(context) {
+    return context.lines.flatMap((line, index) => {
         const usesMatch = line.match(/\buses:\s*['"]?([^'"\s#]+)['"]?/);
         if (!usesMatch) {
-            return;
+            return [];
         }
-        const reference = usesMatch[1];
-        if (reference.startsWith('./') ||
-            reference.startsWith('../') ||
-            reference.startsWith('docker://')) {
-            if (reference.startsWith('docker://') && !constants_1.DIGEST_PATTERN.test(reference)) {
-                findings.push(finding('github-actions/docker-digest', 'github-actions', context.file, index + 1, 'high', `Docker action reference '${reference}' is not pinned by digest.`, 'Use a docker:// image reference with an @sha256 digest.'));
-            }
-            return;
-        }
-        const atIndex = reference.lastIndexOf('@');
-        if (atIndex === -1) {
-            findings.push(finding('github-actions/sha-pin', 'github-actions', context.file, index + 1, 'high', `Action '${reference}' is missing an immutable commit SHA ref.`, 'Pin external actions to a full 40-character commit SHA.'));
-            return;
-        }
-        const ref = reference.slice(atIndex + 1);
-        if (!constants_1.SHA_PATTERN.test(ref)) {
-            findings.push(finding(constants_1.SHORT_SHA_PATTERN.test(ref) ? 'github-actions/full-sha' : 'github-actions/sha-pin', 'github-actions', context.file, index + 1, 'high', `Action '${reference}' is pinned to '${ref}', not a full commit SHA.`, 'Replace branch, tag, or short SHA refs with a full 40-character commit SHA.'));
-        }
+        const findingForReference = checkActionReference(context.file, index + 1, usesMatch[1]);
+        return findingForReference ? [findingForReference] : [];
     });
-    return findings;
 }
 function checkDockerLikeFiles(context) {
     if (!isDockerLikeFile(context.file)) {
         return [];
     }
+    if (!isDockerfile(context.file)) {
+        return checkStructuredContainerFile(context);
+    }
     const findings = [];
     context.lines.forEach((line, index) => {
         const dockerfileMatch = line.match(/^\s*FROM\s+([^\s#]+)/i);
-        const yamlImageMatch = line.match(/^\s*image:\s*['"]?([^'"\s#]+)['"]?/i);
-        const image = dockerfileMatch?.[1] ?? yamlImageMatch?.[1];
+        const image = dockerfileMatch?.[1];
         if (!image || image.toLowerCase() === 'scratch' || image.includes('${')) {
             return;
         }
@@ -44670,18 +44690,58 @@ function checkDockerLikeFiles(context) {
     });
     return findings;
 }
+function checkStructuredContainerFile(context) {
+    const references = context.file.endsWith('.json')
+        ? collectStringProperties(safeJson(context.content), 'image')
+        : parseYamlDocuments(context.content).flatMap((document) => collectStringProperties(document, 'image'));
+    return references.flatMap((image) => {
+        if (!image || image.toLowerCase() === 'scratch' || image.includes('${')) {
+            return [];
+        }
+        const severity = /:latest(?:$|@)/i.test(image) || !image.includes(':') ? 'high' : 'medium';
+        if (constants_1.DIGEST_PATTERN.test(image)) {
+            return [];
+        }
+        return [
+            finding('containers/image-digest', 'containers', context.file, lineForYamlScalar(context.lines, 'image', image), severity, `Container image '${image}' is not pinned by digest.`, 'Use an immutable image reference such as name:tag@sha256:<digest>.')
+        ];
+    });
+}
 function checkTerraform(context) {
     if (!context.file.endsWith('.tf')) {
         return [];
     }
     const findings = [];
     const hasTerraformLock = node_fs_1.default.existsSync(node_path_1.default.join(node_path_1.default.dirname(context.absolutePath), '.terraform.lock.hcl'));
+    const blocks = terraformBlocks(context);
+    for (const block of blocks.filter((entry) => entry.type === 'module')) {
+        for (const line of block.lines) {
+            const sourceMatch = line.text.match(/\bsource\s*=\s*"([^"]+)"/);
+            if (!sourceMatch || !isGitReference(sourceMatch[1]) || hasCommitQuery(sourceMatch[1])) {
+                continue;
+            }
+            findings.push(finding('terraform/git-module-sha', 'terraform', context.file, line.number, 'high', `Terraform module source '${sourceMatch[1]}' does not pin a commit SHA.`, 'Add ?ref=<40-character commit SHA> to git module sources.'));
+        }
+    }
+    for (const block of blocks.filter(isTerraformProviderBlock)) {
+        for (const line of block.lines) {
+            const versionMatch = line.text.match(/\bversion\s*=\s*"([^"]+)"/);
+            if (!versionMatch || hasTerraformLock || isExactVersion(versionMatch[1])) {
+                continue;
+            }
+            findings.push(finding('terraform/provider-lock', 'terraform', context.file, line.number, 'medium', `Terraform provider constraint '${versionMatch[1]}' is not exact and no .terraform.lock.hcl was found.`, 'Commit .terraform.lock.hcl or use exact provider versions.'));
+        }
+    }
+    if (blocks.length > 0) {
+        return findings;
+    }
     context.lines.forEach((line, index) => {
-        const sourceMatch = line.match(/\bsource\s*=\s*"([^"]+)"/);
+        const stripped = stripTerraformComment(line);
+        const sourceMatch = stripped.match(/\bsource\s*=\s*"([^"]+)"/);
         if (sourceMatch && isGitReference(sourceMatch[1]) && !hasCommitQuery(sourceMatch[1])) {
             findings.push(finding('terraform/git-module-sha', 'terraform', context.file, index + 1, 'high', `Terraform module source '${sourceMatch[1]}' does not pin a commit SHA.`, 'Add ?ref=<40-character commit SHA> to git module sources.'));
         }
-        const versionMatch = line.match(/\bversion\s*=\s*"([^"]+)"/);
+        const versionMatch = stripped.match(/\bversion\s*=\s*"([^"]+)"/);
         if (versionMatch && !hasTerraformLock && !isExactVersion(versionMatch[1])) {
             findings.push(finding('terraform/provider-lock', 'terraform', context.file, index + 1, 'medium', `Terraform provider constraint '${versionMatch[1]}' is not exact and no .terraform.lock.hcl was found.`, 'Commit .terraform.lock.hcl or use exact provider versions.'));
         }
@@ -44813,12 +44873,109 @@ function isWorkflowOrActionFile(file) {
 }
 function isDockerLikeFile(file) {
     const normalized = file.replaceAll('\\', '/');
-    return (/(^|\/)Dockerfile(\.|$)/.test(normalized) ||
+    return (isDockerfile(normalized) ||
         /(^|\/)(docker-)?compose.*\.ya?ml$/i.test(normalized) ||
         normalized === '.devcontainer/devcontainer.json');
 }
+function isDockerfile(file) {
+    return /(^|\/)Dockerfile(\.|$)/.test(file.replaceAll('\\', '/'));
+}
 function isPythonFile(file) {
     return (/requirements.*\.txt$/.test(file) || file.endsWith('pyproject.toml') || file.endsWith('Pipfile'));
+}
+function parseYamlDocuments(content) {
+    try {
+        return js_yaml_1.default.loadAll(content);
+    }
+    catch {
+        return [];
+    }
+}
+function collectStringProperties(value, propertyName) {
+    if (Array.isArray(value)) {
+        return value.flatMap((entry) => collectStringProperties(entry, propertyName));
+    }
+    if (!isRecord(value)) {
+        return [];
+    }
+    const direct = typeof value[propertyName] === 'string' ? [value[propertyName]] : [];
+    const nested = Object.values(value).flatMap((entry) => collectStringProperties(entry, propertyName));
+    return [...direct, ...nested];
+}
+function terraformBlocks(context) {
+    const blocks = [];
+    let activeBlock;
+    let depth = 0;
+    context.lines.forEach((rawLine, index) => {
+        const text = stripTerraformComment(rawLine);
+        const startMatch = text.match(/^\s*(module|provider|terraform)\b(?:\s+"[^"]+"){0,2}\s*\{/);
+        if (!activeBlock && startMatch) {
+            activeBlock = {
+                type: startMatch[1],
+                lines: []
+            };
+            depth = 0;
+        }
+        if (!activeBlock) {
+            return;
+        }
+        activeBlock.lines.push({ text, number: index + 1 });
+        depth += braceDelta(text);
+        if (depth <= 0) {
+            blocks.push(activeBlock);
+            activeBlock = undefined;
+        }
+    });
+    return blocks;
+}
+function isTerraformProviderBlock(block) {
+    if (block.type === 'provider') {
+        return true;
+    }
+    return (block.type === 'terraform' &&
+        block.lines.some((line) => /\brequired_providers\b/.test(line.text)));
+}
+function stripTerraformComment(line) {
+    let quote;
+    for (let index = 0; index < line.length; index += 1) {
+        const current = line[index];
+        const previous = line[index - 1];
+        if (current === '"' && previous !== '\\') {
+            quote = quote ? undefined : '"';
+        }
+        if (!quote && current === '#') {
+            return line.slice(0, index);
+        }
+        if (!quote && current === '/' && line[index + 1] === '/') {
+            return line.slice(0, index);
+        }
+    }
+    return line;
+}
+function braceDelta(line) {
+    let quote;
+    let delta = 0;
+    for (let index = 0; index < line.length; index += 1) {
+        const current = line[index];
+        const previous = line[index - 1];
+        if (current === '"' && previous !== '\\') {
+            quote = quote ? undefined : '"';
+            continue;
+        }
+        if (quote) {
+            continue;
+        }
+        if (current === '{') {
+            delta += 1;
+        }
+        else if (current === '}') {
+            delta -= 1;
+        }
+    }
+    return delta;
+}
+function isRecord(value) {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 function safeJson(content) {
     try {
@@ -44848,6 +45005,15 @@ function isNodeSpecDeterministic(spec) {
 function lineForText(lines, text) {
     const index = lines.findIndex((line) => line.includes(text));
     return index === -1 ? 1 : index + 1;
+}
+function lineForYamlScalar(lines, key, value) {
+    const escaped = escapeRegExp(value);
+    const pattern = new RegExp(`\\b${escapeRegExp(key)}\\s*:\\s*['"]?${escaped}['"]?\\s*(?:#.*)?$`);
+    const index = lines.findIndex((line) => pattern.test(line.trim()));
+    return index === -1 ? lineForText(lines, value) : index + 1;
+}
+function escapeRegExp(value) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 function isGitReference(value) {
     return /\bgit\+|git::|github\.com|gitlab\.com|bitbucket\.org|\.git\b/.test(value);
