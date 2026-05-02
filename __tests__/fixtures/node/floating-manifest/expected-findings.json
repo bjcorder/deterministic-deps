@@ -1,0 +1,16 @@
+[
+  {
+    "ruleId": "node/lockfile-required",
+    "ecosystem": "node",
+    "file": "package.json",
+    "line": 1,
+    "severity": "high"
+  },
+  {
+    "ruleId": "node/non-deterministic-spec",
+    "ecosystem": "node",
+    "file": "package.json",
+    "line": 3,
+    "severity": "medium"
+  }
+]

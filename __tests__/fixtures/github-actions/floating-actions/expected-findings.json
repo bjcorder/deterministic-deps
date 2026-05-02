@@ -1,0 +1,23 @@
+[
+  {
+    "ruleId": "github-actions/sha-pin",
+    "ecosystem": "github-actions",
+    "file": ".github/workflows/ci.yml",
+    "line": 7,
+    "severity": "high"
+  },
+  {
+    "ruleId": "github-actions/full-sha",
+    "ecosystem": "github-actions",
+    "file": ".github/workflows/ci.yml",
+    "line": 8,
+    "severity": "high"
+  },
+  {
+    "ruleId": "github-actions/docker-digest",
+    "ecosystem": "github-actions",
+    "file": ".github/workflows/ci.yml",
+    "line": 9,
+    "severity": "high"
+  }
+]

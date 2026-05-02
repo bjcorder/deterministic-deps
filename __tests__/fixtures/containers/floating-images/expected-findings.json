@@ -1,0 +1,16 @@
+[
+  {
+    "ruleId": "containers/image-digest",
+    "ecosystem": "containers",
+    "file": "Dockerfile",
+    "line": 1,
+    "severity": "high"
+  },
+  {
+    "ruleId": "containers/image-digest",
+    "ecosystem": "containers",
+    "file": "docker-compose.yml",
+    "line": 3,
+    "severity": "medium"
+  }
+]

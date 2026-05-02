@@ -1,0 +1,23 @@
+[
+  {
+    "ruleId": "python/hash-pinned-requirement",
+    "ecosystem": "python",
+    "file": "requirements.txt",
+    "line": 1,
+    "severity": "medium"
+  },
+  {
+    "ruleId": "python/git-sha",
+    "ecosystem": "python",
+    "file": "requirements.txt",
+    "line": 2,
+    "severity": "high"
+  },
+  {
+    "ruleId": "python/lockfile-required",
+    "ecosystem": "python",
+    "file": "pyproject.toml",
+    "line": 1,
+    "severity": "high"
+  }
+]

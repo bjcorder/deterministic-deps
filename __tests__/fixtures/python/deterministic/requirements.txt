@@ -1,0 +1,2 @@
+requests==2.32.0 --hash=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+git+https://github.com/acme/pkg.git@0123456789abcdef0123456789abcdef01234567

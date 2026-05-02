@@ -1,0 +1,16 @@
+[
+  {
+    "ruleId": "rust/lockfile-required",
+    "ecosystem": "rust",
+    "file": "Cargo.toml",
+    "line": 1,
+    "severity": "high"
+  },
+  {
+    "ruleId": "rust/git-rev-sha",
+    "ecosystem": "rust",
+    "file": "Cargo.toml",
+    "line": 3,
+    "severity": "high"
+  }
+]
