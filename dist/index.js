@@ -44312,7 +44312,7 @@ function parseYamlConfig(content, configPath) {
         return js_yaml_1.default.load(content);
     }
     catch (error) {
-        throw new Error(`Unable to parse ${configPath}: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(`Unable to parse ${configPath}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
 }
 function readMode(raw, diagnostics) {
