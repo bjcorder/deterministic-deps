@@ -1,0 +1,9 @@
+[
+  {
+    "ruleId": "containers/image-digest",
+    "ecosystem": "containers",
+    "file": "Dockerfile",
+    "line": 1,
+    "severity": "low"
+  }
+]

@@ -1,0 +1,16 @@
+[
+  {
+    "ruleId": "ruby/lockfile-required",
+    "ecosystem": "ruby",
+    "file": "Gemfile",
+    "line": 1,
+    "severity": "high"
+  },
+  {
+    "ruleId": "ruby/git-ref-sha",
+    "ecosystem": "ruby",
+    "file": "Gemfile",
+    "line": 3,
+    "severity": "high"
+  }
+]

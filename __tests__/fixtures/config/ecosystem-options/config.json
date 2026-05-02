@@ -1,0 +1,16 @@
+{
+  "ecosystems": {
+    "go": {
+      "requireGoSum": false
+    },
+    "node": {
+      "allowVersionRangesWithLockfile": true
+    },
+    "ruby": {
+      "requireLockfile": false
+    },
+    "rust": {
+      "requireLockfile": false
+    }
+  }
+}

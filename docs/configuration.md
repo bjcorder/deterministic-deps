@@ -27,6 +27,22 @@ allowlist:
   - file: tools/requirements.txt
     ecosystem: python
     line: 12
+
+ecosystems:
+  node:
+    requireLockfile: true
+    allowVersionRangesWithLockfile: false
+  python:
+    requireProjectLockfile: true
+    requireRequirementHashes: true
+  terraform:
+    requireProviderLock: true
+  go:
+    requireGoSum: true
+  rust:
+    requireLockfile: true
+  ruby:
+    requireLockfile: true
 ```
 
 ## Fields
@@ -40,5 +56,31 @@ allowlist:
 | `rules`              | Map of rule id to `true` or `false`.                                      |
 | `severity`           | Map of rule id to severity override.                                      |
 | `allowlist`          | Finding suppressions by file glob, rule id, ecosystem, and optional line. |
+| `ecosystems`         | Ecosystem-specific policy options for lockfile and hash requirements.     |
 
 Allowlist entries should be narrow and temporary. Prefer fixing declarations or adding lockfiles when practical.
+
+## Validation
+
+Malformed YAML fails the action with a clear parse error because the configured policy cannot be trusted. Invalid individual fields emit warnings and are ignored, so the action falls back to defaults or other valid config entries.
+
+Examples that warn and fall back:
+
+- `mode: report-only`
+- `severity-threshold: urgent`
+- `include: '**/*.tf'`
+- `rules` or `ecosystems` values that are not booleans
+- Unknown ecosystem names or option names
+
+## Ecosystem Options
+
+| Option                                           | Default | Description                                                                                                                  |
+| ------------------------------------------------ | ------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `ecosystems.node.requireLockfile`                | `true`  | Require npm, Yarn, or pnpm lockfiles when `package.json` declares dependencies.                                              |
+| `ecosystems.node.allowVersionRangesWithLockfile` | `false` | Allow registry version ranges such as `^1.2.3` when a lockfile is committed. Git and URL specs still require immutable refs. |
+| `ecosystems.python.requireProjectLockfile`       | `true`  | Require `poetry.lock`, `uv.lock`, or `Pipfile.lock` for Python project files.                                                |
+| `ecosystems.python.requireRequirementHashes`     | `true`  | Require `requirements*.txt` entries to use exact pins with `--hash=` values.                                                 |
+| `ecosystems.terraform.requireProviderLock`       | `true`  | Require exact provider versions or `.terraform.lock.hcl` for provider constraints.                                           |
+| `ecosystems.go.requireGoSum`                     | `true`  | Require `go.sum` next to `go.mod`.                                                                                           |
+| `ecosystems.rust.requireLockfile`                | `true`  | Require `Cargo.lock` next to `Cargo.toml`.                                                                                   |
+| `ecosystems.ruby.requireLockfile`                | `true`  | Require `Gemfile.lock` next to `Gemfile`.                                                                                    |

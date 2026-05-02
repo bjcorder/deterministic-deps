@@ -44240,9 +44240,20 @@ exports.splitPatterns = splitPatterns;
 exports.normalizeMode = normalizeMode;
 exports.normalizeSeverity = normalizeSeverity;
 exports.loadConfig = loadConfig;
+exports.loadConfigWithDiagnostics = loadConfigWithDiagnostics;
 const node_fs_1 = __importDefault(__nccwpck_require__(3024));
 const node_path_1 = __importDefault(__nccwpck_require__(6760));
 const js_yaml_1 = __importDefault(__nccwpck_require__(4281));
+const VALID_SEVERITIES = ['low', 'medium', 'high'];
+const VALID_MODES = ['advisory', 'enforce'];
+const ECOSYSTEM_OPTIONS = {
+    go: ['requireGoSum'],
+    node: ['requireLockfile', 'allowVersionRangesWithLockfile'],
+    python: ['requireProjectLockfile', 'requireRequirementHashes'],
+    ruby: ['requireLockfile'],
+    rust: ['requireLockfile'],
+    terraform: ['requireProviderLock']
+};
 function splitPatterns(value) {
     if (!value) {
         return [];
@@ -44265,39 +44276,202 @@ function normalizeSeverity(value, fallback = 'low') {
     return fallback;
 }
 function loadConfig(root, configPath) {
+    return loadConfigWithDiagnostics(root, configPath).config;
+}
+function loadConfigWithDiagnostics(root, configPath) {
     const resolved = node_path_1.default.resolve(root, configPath);
     if (!node_fs_1.default.existsSync(resolved)) {
-        return {};
+        return { config: {}, diagnostics: [] };
     }
-    const parsed = js_yaml_1.default.load(node_fs_1.default.readFileSync(resolved, 'utf8'));
-    if (!parsed || typeof parsed !== 'object') {
-        return {};
+    const rawContent = node_fs_1.default.readFileSync(resolved, 'utf8');
+    const parsed = parseYamlConfig(rawContent, configPath);
+    const diagnostics = [];
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        diagnostics.push({
+            message: `${configPath} must contain a YAML mapping at the top level; ignoring config.`
+        });
+        return { config: {}, diagnostics };
     }
     const raw = parsed;
     return {
-        mode: normalizeMode(raw.mode, undefined),
-        severityThreshold: normalizeSeverity(raw['severity-threshold'], undefined),
-        include: Array.isArray(raw.include) ? raw.include.map(String) : undefined,
-        exclude: Array.isArray(raw.exclude) ? raw.exclude.map(String) : undefined,
-        rules: isRecord(raw.rules) ? booleanRecord(raw.rules) : undefined,
-        severityOverrides: isRecord(raw.severity) ? severityRecord(raw.severity) : undefined,
-        allowlist: Array.isArray(raw.allowlist)
-            ? raw.allowlist.map((entry) => ({ ...entry }))
-            : undefined,
-        ecosystems: isRecord(raw.ecosystems) ? raw.ecosystems : undefined
+        config: {
+            mode: readMode(raw, diagnostics),
+            severityThreshold: readSeverity(raw, 'severity-threshold', diagnostics),
+            include: readStringArray(raw, 'include', diagnostics),
+            exclude: readStringArray(raw, 'exclude', diagnostics),
+            rules: readBooleanRecord(raw, 'rules', diagnostics),
+            severityOverrides: readSeverityRecord(raw, diagnostics),
+            allowlist: readAllowlist(raw, diagnostics),
+            ecosystems: readEcosystems(raw, diagnostics)
+        },
+        diagnostics
     };
+}
+function parseYamlConfig(content, configPath) {
+    try {
+        return js_yaml_1.default.load(content);
+    }
+    catch (error) {
+        throw new Error(`Unable to parse ${configPath}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+}
+function readMode(raw, diagnostics) {
+    const value = raw.mode;
+    if (value === undefined) {
+        return undefined;
+    }
+    if (value === 'advisory' || value === 'enforce') {
+        return value;
+    }
+    diagnostics.push({
+        message: `Invalid mode '${String(value)}'; expected one of ${VALID_MODES.join(', ')}.`
+    });
+    return undefined;
+}
+function readSeverity(raw, key, diagnostics) {
+    const value = raw[key];
+    if (value === undefined) {
+        return undefined;
+    }
+    if (isSeverity(value)) {
+        return value;
+    }
+    diagnostics.push({
+        message: `Invalid ${key} '${String(value)}'; expected one of ${VALID_SEVERITIES.join(', ')}.`
+    });
+    return undefined;
+}
+function readStringArray(raw, key, diagnostics) {
+    const value = raw[key];
+    if (value === undefined) {
+        return undefined;
+    }
+    if (Array.isArray(value) && value.every((entry) => typeof entry === 'string')) {
+        return value;
+    }
+    diagnostics.push({
+        message: `Invalid ${key}; expected an array of strings.`
+    });
+    return undefined;
+}
+function readBooleanRecord(raw, key, diagnostics) {
+    const value = raw[key];
+    if (value === undefined) {
+        return undefined;
+    }
+    if (!isRecord(value)) {
+        diagnostics.push({
+            message: `Invalid ${key}; expected a mapping of names to booleans.`
+        });
+        return undefined;
+    }
+    const entries = Object.entries(value).filter(([, enabled]) => {
+        const valid = typeof enabled === 'boolean';
+        if (!valid) {
+            diagnostics.push({
+                message: `Invalid ${key} value '${String(enabled)}'; expected boolean true or false.`
+            });
+        }
+        return valid;
+    });
+    return Object.fromEntries(entries);
+}
+function readSeverityRecord(raw, diagnostics) {
+    const value = raw.severity;
+    if (value === undefined) {
+        return undefined;
+    }
+    if (!isRecord(value)) {
+        diagnostics.push({
+            message: 'Invalid severity; expected a mapping of rule ids to severity names.'
+        });
+        return undefined;
+    }
+    const entries = Object.entries(value).filter(([, severity]) => {
+        const valid = isSeverity(severity);
+        if (!valid) {
+            diagnostics.push({
+                message: `Invalid severity override '${String(severity)}'; expected one of ${VALID_SEVERITIES.join(', ')}.`
+            });
+        }
+        return valid;
+    });
+    return Object.fromEntries(entries);
+}
+function readAllowlist(raw, diagnostics) {
+    const value = raw.allowlist;
+    if (value === undefined) {
+        return undefined;
+    }
+    if (!Array.isArray(value)) {
+        diagnostics.push({
+            message: 'Invalid allowlist; expected an array of entries.'
+        });
+        return undefined;
+    }
+    return value
+        .filter((entry) => {
+        const valid = isRecord(entry);
+        if (!valid) {
+            diagnostics.push({
+                message: 'Invalid allowlist entry; expected a mapping.'
+            });
+        }
+        return valid;
+    })
+        .map((entry) => ({ ...entry }));
+}
+function readEcosystems(raw, diagnostics) {
+    const value = raw.ecosystems;
+    if (value === undefined) {
+        return undefined;
+    }
+    if (!isRecord(value)) {
+        diagnostics.push({
+            message: 'Invalid ecosystems; expected a mapping of ecosystem names to options.'
+        });
+        return undefined;
+    }
+    const ecosystems = {};
+    for (const [ecosystem, options] of Object.entries(value)) {
+        if (!isRecord(options)) {
+            diagnostics.push({
+                message: `Invalid ecosystems.${ecosystem}; expected a mapping of option names to booleans.`
+            });
+            continue;
+        }
+        const knownOptions = ECOSYSTEM_OPTIONS[ecosystem];
+        if (!knownOptions) {
+            diagnostics.push({
+                message: `Unknown ecosystem '${ecosystem}'; known ecosystems are ${Object.keys(ECOSYSTEM_OPTIONS).join(', ')}.`
+            });
+            continue;
+        }
+        const parsedOptions = {};
+        for (const [option, optionValue] of Object.entries(options)) {
+            if (!knownOptions.includes(option)) {
+                diagnostics.push({
+                    message: `Unknown option ecosystems.${ecosystem}.${option}; known options are ${knownOptions.join(', ')}.`
+                });
+                continue;
+            }
+            if (typeof optionValue !== 'boolean') {
+                diagnostics.push({
+                    message: `Invalid ecosystems.${ecosystem}.${option}; expected boolean true or false.`
+                });
+                continue;
+            }
+            parsedOptions[option] = optionValue;
+        }
+        ecosystems[ecosystem] = parsedOptions;
+    }
+    return ecosystems;
+}
+function isSeverity(value) {
+    return value === 'low' || value === 'medium' || value === 'high';
 }
 function isRecord(value) {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
-function booleanRecord(value) {
-    return Object.fromEntries(Object.entries(value).map(([key, enabled]) => [key, enabled !== false]));
-}
-function severityRecord(value) {
-    return Object.fromEntries(Object.entries(value).map(([key, severity]) => [
-        key,
-        normalizeSeverity(String(severity), 'low')
-    ]));
 }
 
 
@@ -44403,7 +44577,10 @@ async function run() {
     const workspace = process.env.GITHUB_WORKSPACE ?? process.cwd();
     const scanRoot = (0, scanner_1.resolveScanRoot)(workspace, core.getInput('path') || '.');
     const configPath = core.getInput('config') || '.deterministic-deps.yml';
-    const config = (0, config_1.loadConfig)(scanRoot, configPath);
+    const { config, diagnostics } = (0, config_1.loadConfigWithDiagnostics)(scanRoot, configPath);
+    for (const diagnostic of diagnostics) {
+        core.warning(diagnostic.message);
+    }
     const mode = (0, config_1.normalizeMode)(core.getInput('mode'), config.mode ?? 'advisory');
     const severityThreshold = (0, config_1.normalizeSeverity)(core.getInput('severity-threshold'), config.severityThreshold ?? 'low');
     const include = (0, config_1.splitPatterns)(core.getInput('include'));
@@ -44590,6 +44767,7 @@ exports.shouldReportFailure = shouldReportFailure;
 exports.defaultExcludeMatchers = defaultExcludeMatchers;
 const node_fs_1 = __importDefault(__nccwpck_require__(3024));
 const node_path_1 = __importDefault(__nccwpck_require__(6760));
+const js_yaml_1 = __importDefault(__nccwpck_require__(4281));
 const minimatch_1 = __nccwpck_require__(6507);
 const constants_1 = __nccwpck_require__(7242);
 const handlers = [
@@ -44611,6 +44789,7 @@ function evaluateFile(root, file, config, trackedFiles) {
         file,
         absolutePath,
         content,
+        config,
         lines: content.split(/\r?\n/)
     };
     return handlers
@@ -44625,41 +44804,60 @@ function checkGithubActions(context) {
         return [];
     }
     const findings = [];
-    context.lines.forEach((line, index) => {
+    const references = parseYamlDocuments(context.content).flatMap((document) => collectStringProperties(document, 'uses'));
+    for (const reference of references) {
+        const line = lineForYamlScalar(context.lines, 'uses', reference);
+        const findingForReference = checkActionReference(context.file, line, reference);
+        if (findingForReference) {
+            findings.push(findingForReference);
+        }
+    }
+    if (references.length > 0) {
+        return findings;
+    }
+    return checkGithubActionsWithLineFallback(context);
+}
+function checkActionReference(file, line, reference) {
+    if (reference.startsWith('./') || reference.startsWith('../')) {
+        return undefined;
+    }
+    if (reference.startsWith('docker://')) {
+        if (constants_1.DIGEST_PATTERN.test(reference)) {
+            return undefined;
+        }
+        return finding('github-actions/docker-digest', 'github-actions', file, line, 'high', `Docker action reference '${reference}' is not pinned by digest.`, 'Use a docker:// image reference with an @sha256 digest.');
+    }
+    const atIndex = reference.lastIndexOf('@');
+    if (atIndex === -1) {
+        return finding('github-actions/sha-pin', 'github-actions', file, line, 'high', `Action '${reference}' is missing an immutable commit SHA ref.`, 'Pin external actions to a full 40-character commit SHA.');
+    }
+    const ref = reference.slice(atIndex + 1);
+    if (constants_1.SHA_PATTERN.test(ref)) {
+        return undefined;
+    }
+    return finding(constants_1.SHORT_SHA_PATTERN.test(ref) ? 'github-actions/full-sha' : 'github-actions/sha-pin', 'github-actions', file, line, 'high', `Action '${reference}' is pinned to '${ref}', not a full commit SHA.`, 'Replace branch, tag, or short SHA refs with a full 40-character commit SHA.');
+}
+function checkGithubActionsWithLineFallback(context) {
+    return context.lines.flatMap((line, index) => {
         const usesMatch = line.match(/\buses:\s*['"]?([^'"\s#]+)['"]?/);
         if (!usesMatch) {
-            return;
+            return [];
         }
-        const reference = usesMatch[1];
-        if (reference.startsWith('./') ||
-            reference.startsWith('../') ||
-            reference.startsWith('docker://')) {
-            if (reference.startsWith('docker://') && !constants_1.DIGEST_PATTERN.test(reference)) {
-                findings.push(finding('github-actions/docker-digest', 'github-actions', context.file, index + 1, 'high', `Docker action reference '${reference}' is not pinned by digest.`, 'Use a docker:// image reference with an @sha256 digest.'));
-            }
-            return;
-        }
-        const atIndex = reference.lastIndexOf('@');
-        if (atIndex === -1) {
-            findings.push(finding('github-actions/sha-pin', 'github-actions', context.file, index + 1, 'high', `Action '${reference}' is missing an immutable commit SHA ref.`, 'Pin external actions to a full 40-character commit SHA.'));
-            return;
-        }
-        const ref = reference.slice(atIndex + 1);
-        if (!constants_1.SHA_PATTERN.test(ref)) {
-            findings.push(finding(constants_1.SHORT_SHA_PATTERN.test(ref) ? 'github-actions/full-sha' : 'github-actions/sha-pin', 'github-actions', context.file, index + 1, 'high', `Action '${reference}' is pinned to '${ref}', not a full commit SHA.`, 'Replace branch, tag, or short SHA refs with a full 40-character commit SHA.'));
-        }
+        const findingForReference = checkActionReference(context.file, index + 1, usesMatch[1]);
+        return findingForReference ? [findingForReference] : [];
     });
-    return findings;
 }
 function checkDockerLikeFiles(context) {
     if (!isDockerLikeFile(context.file)) {
         return [];
     }
+    if (!isDockerfile(context.file)) {
+        return checkStructuredContainerFile(context);
+    }
     const findings = [];
     context.lines.forEach((line, index) => {
         const dockerfileMatch = line.match(/^\s*FROM\s+([^\s#]+)/i);
-        const yamlImageMatch = line.match(/^\s*image:\s*['"]?([^'"\s#]+)['"]?/i);
-        const image = dockerfileMatch?.[1] ?? yamlImageMatch?.[1];
+        const image = dockerfileMatch?.[1];
         if (!image || image.toLowerCase() === 'scratch' || image.includes('${')) {
             return;
         }
@@ -44670,19 +44868,65 @@ function checkDockerLikeFiles(context) {
     });
     return findings;
 }
+function checkStructuredContainerFile(context) {
+    const references = context.file.endsWith('.json')
+        ? collectStringProperties(safeJson(context.content), 'image')
+        : parseYamlDocuments(context.content).flatMap((document) => collectStringProperties(document, 'image'));
+    return references.flatMap((image) => {
+        if (!image || image.toLowerCase() === 'scratch' || image.includes('${')) {
+            return [];
+        }
+        const severity = /:latest(?:$|@)/i.test(image) || !image.includes(':') ? 'high' : 'medium';
+        if (constants_1.DIGEST_PATTERN.test(image)) {
+            return [];
+        }
+        return [
+            finding('containers/image-digest', 'containers', context.file, lineForYamlScalar(context.lines, 'image', image), severity, `Container image '${image}' is not pinned by digest.`, 'Use an immutable image reference such as name:tag@sha256:<digest>.')
+        ];
+    });
+}
 function checkTerraform(context) {
     if (!context.file.endsWith('.tf')) {
         return [];
     }
     const findings = [];
     const hasTerraformLock = node_fs_1.default.existsSync(node_path_1.default.join(node_path_1.default.dirname(context.absolutePath), '.terraform.lock.hcl'));
+    const blocks = terraformBlocks(context);
+    for (const block of blocks.filter((entry) => entry.type === 'module')) {
+        for (const line of block.lines) {
+            const sourceMatch = line.text.match(/\bsource\s*=\s*"([^"]+)"/);
+            if (!sourceMatch || !isGitReference(sourceMatch[1]) || hasCommitQuery(sourceMatch[1])) {
+                continue;
+            }
+            findings.push(finding('terraform/git-module-sha', 'terraform', context.file, line.number, 'high', `Terraform module source '${sourceMatch[1]}' does not pin a commit SHA.`, 'Add ?ref=<40-character commit SHA> to git module sources.'));
+        }
+    }
+    for (const block of blocks.filter(isTerraformProviderBlock)) {
+        for (const line of block.lines) {
+            const versionMatch = line.text.match(/\bversion\s*=\s*"([^"]+)"/);
+            if (!versionMatch ||
+                hasTerraformLock ||
+                isExactVersion(versionMatch[1]) ||
+                !ecosystemBoolean(context.config, 'terraform', 'requireProviderLock', true)) {
+                continue;
+            }
+            findings.push(finding('terraform/provider-lock', 'terraform', context.file, line.number, 'medium', `Terraform provider constraint '${versionMatch[1]}' is not exact and no .terraform.lock.hcl was found.`, 'Commit .terraform.lock.hcl or use exact provider versions.'));
+        }
+    }
+    if (blocks.length > 0) {
+        return findings;
+    }
     context.lines.forEach((line, index) => {
-        const sourceMatch = line.match(/\bsource\s*=\s*"([^"]+)"/);
+        const stripped = stripTerraformComment(line);
+        const sourceMatch = stripped.match(/\bsource\s*=\s*"([^"]+)"/);
         if (sourceMatch && isGitReference(sourceMatch[1]) && !hasCommitQuery(sourceMatch[1])) {
             findings.push(finding('terraform/git-module-sha', 'terraform', context.file, index + 1, 'high', `Terraform module source '${sourceMatch[1]}' does not pin a commit SHA.`, 'Add ?ref=<40-character commit SHA> to git module sources.'));
         }
-        const versionMatch = line.match(/\bversion\s*=\s*"([^"]+)"/);
-        if (versionMatch && !hasTerraformLock && !isExactVersion(versionMatch[1])) {
+        const versionMatch = stripped.match(/\bversion\s*=\s*"([^"]+)"/);
+        if (versionMatch &&
+            !hasTerraformLock &&
+            !isExactVersion(versionMatch[1]) &&
+            ecosystemBoolean(context.config, 'terraform', 'requireProviderLock', true)) {
             findings.push(finding('terraform/provider-lock', 'terraform', context.file, index + 1, 'medium', `Terraform provider constraint '${versionMatch[1]}' is not exact and no .terraform.lock.hcl was found.`, 'Commit .terraform.lock.hcl or use exact provider versions.'));
         }
     });
@@ -44699,12 +44943,18 @@ function checkNode(context) {
     if (!json) {
         return [];
     }
-    if (!hasLock && hasRuntimeDependencies(json)) {
+    if (!hasLock &&
+        hasRuntimeDependencies(json) &&
+        ecosystemBoolean(context.config, 'node', 'requireLockfile', true)) {
         findings.push(finding('node/lockfile-required', 'node', context.file, 1, 'high', 'package.json declares dependencies but no npm, Yarn, or pnpm lockfile was found.', 'Commit package-lock.json, npm-shrinkwrap.json, yarn.lock, or pnpm-lock.yaml.'));
     }
     for (const [section, dependencies] of dependencySections(json)) {
         for (const [name, spec] of Object.entries(dependencies)) {
-            if (typeof spec !== 'string' || isNodeSpecDeterministic(spec)) {
+            if (typeof spec !== 'string' ||
+                isNodeSpecDeterministic(spec) ||
+                (hasLock &&
+                    ecosystemBoolean(context.config, 'node', 'allowVersionRangesWithLockfile', false) &&
+                    isNodeRegistryVersionSpec(spec))) {
                 continue;
             }
             findings.push(finding('node/non-deterministic-spec', 'node', context.file, lineForText(context.lines, `"${name}"`), 'medium', `${section} dependency '${name}' uses non-deterministic spec '${spec}'.`, 'Use exact versions with a committed lockfile, workspace/file links, or git commit SHAs.'));
@@ -44732,7 +44982,9 @@ function checkPython(context) {
             findings.push(finding('python/git-sha', 'python', context.file, index + 1, 'high', `Python git dependency '${trimmed}' is not pinned to a commit SHA.`, 'Use @<40-character commit SHA> for git dependencies.'));
             return;
         }
-        if (/[<>=~!]=/.test(trimmed) && (!/==[^=]/.test(trimmed) || !trimmed.includes('--hash='))) {
+        if (ecosystemBoolean(context.config, 'python', 'requireRequirementHashes', true) &&
+            /[<>=~!]=/.test(trimmed) &&
+            (!/==[^=]/.test(trimmed) || !trimmed.includes('--hash='))) {
             findings.push(finding('python/hash-pinned-requirement', 'python', context.file, index + 1, 'medium', `Requirement '${trimmed}' is not exactly pinned with a hash.`, 'Use exact == pins and --hash entries, for example from pip-compile --generate-hashes.'));
         }
     });
@@ -44741,7 +44993,8 @@ function checkPython(context) {
 function checkPythonProjectFile(context) {
     const directory = node_path_1.default.dirname(context.absolutePath);
     const locks = ['poetry.lock', 'uv.lock', 'Pipfile.lock'];
-    if (locks.some((lock) => node_fs_1.default.existsSync(node_path_1.default.join(directory, lock)))) {
+    if (!ecosystemBoolean(context.config, 'python', 'requireProjectLockfile', true) ||
+        locks.some((lock) => node_fs_1.default.existsSync(node_path_1.default.join(directory, lock)))) {
         return [];
     }
     return [
@@ -44754,7 +45007,8 @@ function checkGo(context) {
     }
     const findings = [];
     const directory = node_path_1.default.dirname(context.absolutePath);
-    if (!node_fs_1.default.existsSync(node_path_1.default.join(directory, 'go.sum'))) {
+    if (!node_fs_1.default.existsSync(node_path_1.default.join(directory, 'go.sum')) &&
+        ecosystemBoolean(context.config, 'go', 'requireGoSum', true)) {
         findings.push(finding('go/sum-required', 'go', context.file, 1, 'high', 'go.mod was found without go.sum.', 'Commit go.sum so module checksums are locked.'));
     }
     context.lines.forEach((line, index) => {
@@ -44770,7 +45024,8 @@ function checkRust(context) {
     }
     const findings = [];
     const directory = node_path_1.default.dirname(context.absolutePath);
-    if (!node_fs_1.default.existsSync(node_path_1.default.join(directory, 'Cargo.lock'))) {
+    if (!node_fs_1.default.existsSync(node_path_1.default.join(directory, 'Cargo.lock')) &&
+        ecosystemBoolean(context.config, 'rust', 'requireLockfile', true)) {
         findings.push(finding('rust/lockfile-required', 'rust', context.file, 1, 'high', 'Cargo.toml was found without Cargo.lock.', 'Commit Cargo.lock for applications and workspaces that need deterministic builds.'));
     }
     context.lines.forEach((line, index) => {
@@ -44798,7 +45053,8 @@ function checkRuby(context) {
     }
     const findings = [];
     const directory = node_path_1.default.dirname(context.absolutePath);
-    if (!node_fs_1.default.existsSync(node_path_1.default.join(directory, 'Gemfile.lock'))) {
+    if (!node_fs_1.default.existsSync(node_path_1.default.join(directory, 'Gemfile.lock')) &&
+        ecosystemBoolean(context.config, 'ruby', 'requireLockfile', true)) {
         findings.push(finding('ruby/lockfile-required', 'ruby', context.file, 1, 'high', 'Gemfile was found without Gemfile.lock.', 'Commit Gemfile.lock so resolved gem versions are deterministic.'));
     }
     context.lines.forEach((line, index) => {
@@ -44813,12 +45069,109 @@ function isWorkflowOrActionFile(file) {
 }
 function isDockerLikeFile(file) {
     const normalized = file.replaceAll('\\', '/');
-    return (/(^|\/)Dockerfile(\.|$)/.test(normalized) ||
+    return (isDockerfile(normalized) ||
         /(^|\/)(docker-)?compose.*\.ya?ml$/i.test(normalized) ||
         normalized === '.devcontainer/devcontainer.json');
 }
+function isDockerfile(file) {
+    return /(^|\/)Dockerfile(\.|$)/.test(file.replaceAll('\\', '/'));
+}
 function isPythonFile(file) {
     return (/requirements.*\.txt$/.test(file) || file.endsWith('pyproject.toml') || file.endsWith('Pipfile'));
+}
+function parseYamlDocuments(content) {
+    try {
+        return js_yaml_1.default.loadAll(content);
+    }
+    catch {
+        return [];
+    }
+}
+function collectStringProperties(value, propertyName) {
+    if (Array.isArray(value)) {
+        return value.flatMap((entry) => collectStringProperties(entry, propertyName));
+    }
+    if (!isRecord(value)) {
+        return [];
+    }
+    const direct = typeof value[propertyName] === 'string' ? [value[propertyName]] : [];
+    const nested = Object.values(value).flatMap((entry) => collectStringProperties(entry, propertyName));
+    return [...direct, ...nested];
+}
+function terraformBlocks(context) {
+    const blocks = [];
+    let activeBlock;
+    let depth = 0;
+    context.lines.forEach((rawLine, index) => {
+        const text = stripTerraformComment(rawLine);
+        const startMatch = text.match(/^\s*(module|provider|terraform)\b(?:\s+"[^"]+"){0,2}\s*\{/);
+        if (!activeBlock && startMatch) {
+            activeBlock = {
+                type: startMatch[1],
+                lines: []
+            };
+            depth = 0;
+        }
+        if (!activeBlock) {
+            return;
+        }
+        activeBlock.lines.push({ text, number: index + 1 });
+        depth += braceDelta(text);
+        if (depth <= 0) {
+            blocks.push(activeBlock);
+            activeBlock = undefined;
+        }
+    });
+    return blocks;
+}
+function isTerraformProviderBlock(block) {
+    if (block.type === 'provider') {
+        return true;
+    }
+    return (block.type === 'terraform' &&
+        block.lines.some((line) => /\brequired_providers\b/.test(line.text)));
+}
+function stripTerraformComment(line) {
+    let quote;
+    for (let index = 0; index < line.length; index += 1) {
+        const current = line[index];
+        const previous = line[index - 1];
+        if (current === '"' && previous !== '\\') {
+            quote = quote ? undefined : '"';
+        }
+        if (!quote && current === '#') {
+            return line.slice(0, index);
+        }
+        if (!quote && current === '/' && line[index + 1] === '/') {
+            return line.slice(0, index);
+        }
+    }
+    return line;
+}
+function braceDelta(line) {
+    let quote;
+    let delta = 0;
+    for (let index = 0; index < line.length; index += 1) {
+        const current = line[index];
+        const previous = line[index - 1];
+        if (current === '"' && previous !== '\\') {
+            quote = quote ? undefined : '"';
+            continue;
+        }
+        if (quote) {
+            continue;
+        }
+        if (current === '{') {
+            delta += 1;
+        }
+        else if (current === '}') {
+            delta -= 1;
+        }
+    }
+    return delta;
+}
+function isRecord(value) {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 function safeJson(content) {
     try {
@@ -44845,9 +45198,25 @@ function isNodeSpecDeterministic(spec) {
     }
     return /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(spec);
 }
+function isNodeRegistryVersionSpec(spec) {
+    return !/^(git\+|git:|github:|https?:|ssh:|file:|workspace:|link:|portal:|patch:)/.test(spec);
+}
+function ecosystemBoolean(config, ecosystem, key, fallback) {
+    const value = config.ecosystems?.[ecosystem]?.[key];
+    return typeof value === 'boolean' ? value : fallback;
+}
 function lineForText(lines, text) {
     const index = lines.findIndex((line) => line.includes(text));
     return index === -1 ? 1 : index + 1;
+}
+function lineForYamlScalar(lines, key, value) {
+    const escaped = escapeRegExp(value);
+    const pattern = new RegExp(`\\b${escapeRegExp(key)}\\s*:\\s*['"]?${escaped}['"]?\\s*(?:#.*)?$`);
+    const index = lines.findIndex((line) => pattern.test(line.trim()));
+    return index === -1 ? lineForText(lines, value) : index + 1;
+}
+function escapeRegExp(value) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 function isGitReference(value) {
     return /\bgit\+|git::|github\.com|gitlab\.com|bitbucket\.org|\.git\b/.test(value);

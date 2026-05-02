@@ -112,6 +112,185 @@ describe('deterministic-deps scanner', () => {
     expect(allowed.findings).toEqual([])
   })
 
+  it('honors ecosystem-specific policy options', async () => {
+    const root = tempRepo()
+    write(root, 'package.json', JSON.stringify({ dependencies: { leftpad: '^1.0.0' } }, null, 2))
+    write(root, 'package-lock.json', '{}\n')
+    write(root, 'requirements.txt', 'requests==2.32.0\n')
+    write(root, 'pyproject.toml', '[project]\ndependencies = ["requests"]\n')
+    write(root, 'go.mod', 'module example.com/app\n')
+    write(root, 'Cargo.toml', '[dependencies]\nserde = "1"\n')
+    write(root, 'Gemfile', "gem 'rails'\n")
+    write(
+      root,
+      'main.tf',
+      [
+        'terraform {',
+        '  required_providers {',
+        '    aws = {',
+        '      source = "hashicorp/aws"',
+        '      version = "~> 5.0"',
+        '    }',
+        '  }',
+        '}',
+        ''
+      ].join('\n')
+    )
+
+    const result = await scan({
+      root,
+      include: [],
+      exclude: [],
+      config: {
+        ecosystems: {
+          go: { requireGoSum: false },
+          node: { allowVersionRangesWithLockfile: true },
+          python: {
+            requireProjectLockfile: false,
+            requireRequirementHashes: false
+          },
+          ruby: { requireLockfile: false },
+          rust: { requireLockfile: false },
+          terraform: { requireProviderLock: false }
+        }
+      }
+    })
+
+    expect(result.findings).toEqual([])
+  })
+
+  it('uses parsed workflow YAML so comments do not create action findings', async () => {
+    const root = tempRepo()
+    write(
+      root,
+      '.github/workflows/ci.yml',
+      [
+        'name: ci',
+        'on: pull_request',
+        'jobs:',
+        '  test:',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      # uses: actions/checkout@v4',
+        '      - uses: ./local-action',
+        '      - uses: docker://alpine:3.20',
+        ''
+      ].join('\n')
+    )
+
+    const result = await scan({ root, include: [], exclude: [], config: {} })
+
+    expect(result.findings.map((finding) => finding.ruleId)).toEqual([
+      'github-actions/docker-digest'
+    ])
+  })
+
+  it('flags reusable workflow refs from parsed workflow jobs', async () => {
+    const root = tempRepo()
+    write(
+      root,
+      '.github/workflows/reuse.yml',
+      [
+        'jobs:',
+        '  call:',
+        '    uses: octo-org/automation/.github/workflows/release.yml@main',
+        ''
+      ].join('\n')
+    )
+
+    const result = await scan({ root, include: [], exclude: [], config: {} })
+
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          ruleId: 'github-actions/sha-pin',
+          line: 3
+        })
+      ])
+    )
+  })
+
+  it('uses parsed compose and devcontainer files for image references', async () => {
+    const root = tempRepo()
+    write(
+      root,
+      'docker-compose.yml',
+      [
+        'services:',
+        '  app:',
+        '    # image: redis:latest',
+        '    image: ghcr.io/acme/app:1.0.0',
+        '  worker:',
+        `    image: ghcr.io/acme/worker:1.0.0@sha256:${'c'.repeat(64)}`,
+        ''
+      ].join('\n')
+    )
+    write(
+      root,
+      '.devcontainer/devcontainer.json',
+      JSON.stringify({ image: 'mcr.microsoft.com/devcontainers/typescript-node:latest' }, null, 2)
+    )
+
+    const result = await scan({ root, include: [], exclude: [], config: {} })
+
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          ruleId: 'containers/image-digest',
+          file: 'docker-compose.yml',
+          line: 4,
+          severity: 'medium'
+        }),
+        expect.objectContaining({
+          ruleId: 'containers/image-digest',
+          file: '.devcontainer/devcontainer.json',
+          severity: 'high'
+        })
+      ])
+    )
+    expect(result.findings).toHaveLength(2)
+  })
+
+  it('keeps Terraform checks scoped to module and provider blocks', async () => {
+    const root = tempRepo()
+    write(
+      root,
+      'main.tf',
+      [
+        'variable "source" {',
+        '  default = "git::https://github.com/acme/not-a-module.git?ref=main"',
+        '}',
+        '',
+        'module "floating" {',
+        '  source = "git::https://github.com/acme/module.git?ref=main"',
+        '}',
+        '',
+        'terraform {',
+        '  required_providers {',
+        '    aws = {',
+        '      source = "hashicorp/aws"',
+        '      version = "~> 5.0"',
+        '    }',
+        '  }',
+        '}',
+        ''
+      ].join('\n')
+    )
+
+    const result = await scan({ root, include: [], exclude: [], config: {} })
+
+    expect(result.findings).toEqual([
+      expect.objectContaining({
+        ruleId: 'terraform/git-module-sha',
+        line: 6
+      }),
+      expect.objectContaining({
+        ruleId: 'terraform/provider-lock',
+        line: 13
+      })
+    ])
+  })
+
   it('renders markdown and sarif reports', async () => {
     const root = tempRepo()
     write(root, 'Dockerfile', 'FROM node:latest\n')

@@ -19,7 +19,40 @@ export interface Config {
   rules?: Record<string, boolean>
   severityOverrides?: Record<string, Severity>
   allowlist?: AllowlistEntry[]
-  ecosystems?: Record<string, Record<string, unknown>>
+  ecosystems?: EcosystemOptions
+}
+
+export interface ConfigDiagnostic {
+  message: string
+}
+
+export interface ConfigLoadResult {
+  config: Config
+  diagnostics: ConfigDiagnostic[]
+}
+
+export interface EcosystemOptions {
+  go?: {
+    requireGoSum?: boolean
+  }
+  node?: {
+    requireLockfile?: boolean
+    allowVersionRangesWithLockfile?: boolean
+  }
+  python?: {
+    requireProjectLockfile?: boolean
+    requireRequirementHashes?: boolean
+  }
+  ruby?: {
+    requireLockfile?: boolean
+  }
+  rust?: {
+    requireLockfile?: boolean
+  }
+  terraform?: {
+    requireProviderLock?: boolean
+  }
+  [ecosystem: string]: Record<string, unknown> | undefined
 }
 
 export interface AllowlistEntry {
