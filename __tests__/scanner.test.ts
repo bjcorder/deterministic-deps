@@ -112,6 +112,53 @@ describe('deterministic-deps scanner', () => {
     expect(allowed.findings).toEqual([])
   })
 
+  it('honors ecosystem-specific policy options', async () => {
+    const root = tempRepo()
+    write(root, 'package.json', JSON.stringify({ dependencies: { leftpad: '^1.0.0' } }, null, 2))
+    write(root, 'package-lock.json', '{}\n')
+    write(root, 'requirements.txt', 'requests==2.32.0\n')
+    write(root, 'pyproject.toml', '[project]\ndependencies = ["requests"]\n')
+    write(root, 'go.mod', 'module example.com/app\n')
+    write(root, 'Cargo.toml', '[dependencies]\nserde = "1"\n')
+    write(root, 'Gemfile', "gem 'rails'\n")
+    write(
+      root,
+      'main.tf',
+      [
+        'terraform {',
+        '  required_providers {',
+        '    aws = {',
+        '      source = "hashicorp/aws"',
+        '      version = "~> 5.0"',
+        '    }',
+        '  }',
+        '}',
+        ''
+      ].join('\n')
+    )
+
+    const result = await scan({
+      root,
+      include: [],
+      exclude: [],
+      config: {
+        ecosystems: {
+          go: { requireGoSum: false },
+          node: { allowVersionRangesWithLockfile: true },
+          python: {
+            requireProjectLockfile: false,
+            requireRequirementHashes: false
+          },
+          ruby: { requireLockfile: false },
+          rust: { requireLockfile: false },
+          terraform: { requireProviderLock: false }
+        }
+      }
+    })
+
+    expect(result.findings).toEqual([])
+  })
+
   it('uses parsed workflow YAML so comments do not create action findings', async () => {
     const root = tempRepo()
     write(

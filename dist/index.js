@@ -44612,6 +44612,7 @@ function evaluateFile(root, file, config, trackedFiles) {
         file,
         absolutePath,
         content,
+        config,
         lines: content.split(/\r?\n/)
     };
     return handlers
@@ -44726,7 +44727,10 @@ function checkTerraform(context) {
     for (const block of blocks.filter(isTerraformProviderBlock)) {
         for (const line of block.lines) {
             const versionMatch = line.text.match(/\bversion\s*=\s*"([^"]+)"/);
-            if (!versionMatch || hasTerraformLock || isExactVersion(versionMatch[1])) {
+            if (!versionMatch ||
+                hasTerraformLock ||
+                isExactVersion(versionMatch[1]) ||
+                !ecosystemBoolean(context.config, 'terraform', 'requireProviderLock', true)) {
                 continue;
             }
             findings.push(finding('terraform/provider-lock', 'terraform', context.file, line.number, 'medium', `Terraform provider constraint '${versionMatch[1]}' is not exact and no .terraform.lock.hcl was found.`, 'Commit .terraform.lock.hcl or use exact provider versions.'));
@@ -44742,7 +44746,10 @@ function checkTerraform(context) {
             findings.push(finding('terraform/git-module-sha', 'terraform', context.file, index + 1, 'high', `Terraform module source '${sourceMatch[1]}' does not pin a commit SHA.`, 'Add ?ref=<40-character commit SHA> to git module sources.'));
         }
         const versionMatch = stripped.match(/\bversion\s*=\s*"([^"]+)"/);
-        if (versionMatch && !hasTerraformLock && !isExactVersion(versionMatch[1])) {
+        if (versionMatch &&
+            !hasTerraformLock &&
+            !isExactVersion(versionMatch[1]) &&
+            ecosystemBoolean(context.config, 'terraform', 'requireProviderLock', true)) {
             findings.push(finding('terraform/provider-lock', 'terraform', context.file, index + 1, 'medium', `Terraform provider constraint '${versionMatch[1]}' is not exact and no .terraform.lock.hcl was found.`, 'Commit .terraform.lock.hcl or use exact provider versions.'));
         }
     });
@@ -44759,12 +44766,18 @@ function checkNode(context) {
     if (!json) {
         return [];
     }
-    if (!hasLock && hasRuntimeDependencies(json)) {
+    if (!hasLock &&
+        hasRuntimeDependencies(json) &&
+        ecosystemBoolean(context.config, 'node', 'requireLockfile', true)) {
         findings.push(finding('node/lockfile-required', 'node', context.file, 1, 'high', 'package.json declares dependencies but no npm, Yarn, or pnpm lockfile was found.', 'Commit package-lock.json, npm-shrinkwrap.json, yarn.lock, or pnpm-lock.yaml.'));
     }
     for (const [section, dependencies] of dependencySections(json)) {
         for (const [name, spec] of Object.entries(dependencies)) {
-            if (typeof spec !== 'string' || isNodeSpecDeterministic(spec)) {
+            if (typeof spec !== 'string' ||
+                isNodeSpecDeterministic(spec) ||
+                (hasLock &&
+                    ecosystemBoolean(context.config, 'node', 'allowVersionRangesWithLockfile', false) &&
+                    isNodeRegistryVersionSpec(spec))) {
                 continue;
             }
             findings.push(finding('node/non-deterministic-spec', 'node', context.file, lineForText(context.lines, `"${name}"`), 'medium', `${section} dependency '${name}' uses non-deterministic spec '${spec}'.`, 'Use exact versions with a committed lockfile, workspace/file links, or git commit SHAs.'));
@@ -44792,7 +44805,9 @@ function checkPython(context) {
             findings.push(finding('python/git-sha', 'python', context.file, index + 1, 'high', `Python git dependency '${trimmed}' is not pinned to a commit SHA.`, 'Use @<40-character commit SHA> for git dependencies.'));
             return;
         }
-        if (/[<>=~!]=/.test(trimmed) && (!/==[^=]/.test(trimmed) || !trimmed.includes('--hash='))) {
+        if (ecosystemBoolean(context.config, 'python', 'requireRequirementHashes', true) &&
+            /[<>=~!]=/.test(trimmed) &&
+            (!/==[^=]/.test(trimmed) || !trimmed.includes('--hash='))) {
             findings.push(finding('python/hash-pinned-requirement', 'python', context.file, index + 1, 'medium', `Requirement '${trimmed}' is not exactly pinned with a hash.`, 'Use exact == pins and --hash entries, for example from pip-compile --generate-hashes.'));
         }
     });
@@ -44801,7 +44816,8 @@ function checkPython(context) {
 function checkPythonProjectFile(context) {
     const directory = node_path_1.default.dirname(context.absolutePath);
     const locks = ['poetry.lock', 'uv.lock', 'Pipfile.lock'];
-    if (locks.some((lock) => node_fs_1.default.existsSync(node_path_1.default.join(directory, lock)))) {
+    if (!ecosystemBoolean(context.config, 'python', 'requireProjectLockfile', true) ||
+        locks.some((lock) => node_fs_1.default.existsSync(node_path_1.default.join(directory, lock)))) {
         return [];
     }
     return [
@@ -44814,7 +44830,8 @@ function checkGo(context) {
     }
     const findings = [];
     const directory = node_path_1.default.dirname(context.absolutePath);
-    if (!node_fs_1.default.existsSync(node_path_1.default.join(directory, 'go.sum'))) {
+    if (!node_fs_1.default.existsSync(node_path_1.default.join(directory, 'go.sum')) &&
+        ecosystemBoolean(context.config, 'go', 'requireGoSum', true)) {
         findings.push(finding('go/sum-required', 'go', context.file, 1, 'high', 'go.mod was found without go.sum.', 'Commit go.sum so module checksums are locked.'));
     }
     context.lines.forEach((line, index) => {
@@ -44830,7 +44847,8 @@ function checkRust(context) {
     }
     const findings = [];
     const directory = node_path_1.default.dirname(context.absolutePath);
-    if (!node_fs_1.default.existsSync(node_path_1.default.join(directory, 'Cargo.lock'))) {
+    if (!node_fs_1.default.existsSync(node_path_1.default.join(directory, 'Cargo.lock')) &&
+        ecosystemBoolean(context.config, 'rust', 'requireLockfile', true)) {
         findings.push(finding('rust/lockfile-required', 'rust', context.file, 1, 'high', 'Cargo.toml was found without Cargo.lock.', 'Commit Cargo.lock for applications and workspaces that need deterministic builds.'));
     }
     context.lines.forEach((line, index) => {
@@ -44858,7 +44876,8 @@ function checkRuby(context) {
     }
     const findings = [];
     const directory = node_path_1.default.dirname(context.absolutePath);
-    if (!node_fs_1.default.existsSync(node_path_1.default.join(directory, 'Gemfile.lock'))) {
+    if (!node_fs_1.default.existsSync(node_path_1.default.join(directory, 'Gemfile.lock')) &&
+        ecosystemBoolean(context.config, 'ruby', 'requireLockfile', true)) {
         findings.push(finding('ruby/lockfile-required', 'ruby', context.file, 1, 'high', 'Gemfile was found without Gemfile.lock.', 'Commit Gemfile.lock so resolved gem versions are deterministic.'));
     }
     context.lines.forEach((line, index) => {
@@ -45001,6 +45020,13 @@ function isNodeSpecDeterministic(spec) {
         return true;
     }
     return /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(spec);
+}
+function isNodeRegistryVersionSpec(spec) {
+    return !/^(git\+|git:|github:|https?:|ssh:|file:|workspace:|link:|portal:|patch:)/.test(spec);
+}
+function ecosystemBoolean(config, ecosystem, key, fallback) {
+    const value = config.ecosystems?.[ecosystem]?.[key];
+    return typeof value === 'boolean' ? value : fallback;
 }
 function lineForText(lines, text) {
     const index = lines.findIndex((line) => line.includes(text));

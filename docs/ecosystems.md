@@ -14,6 +14,10 @@ npm, Yarn, pnpm, Poetry, uv, Pipenv, Go, Rust, Bundler, Maven, and Gradle often 
 
 GitHub Actions workflows, Compose files, and devcontainer JSON files are parsed before rules are evaluated so comments and unrelated text are ignored. Terraform/OpenTofu checks are block-aware for module sources and provider constraints.
 
+## Policy Options
+
+Projects can tune lockfile and hash requirements with the `ecosystems` config block. This is intended for cases like library repositories that intentionally do not commit application lockfiles, or repositories that accept registry version ranges when a package manager lockfile is present.
+
 ## Known Limits
 
 - The scanner intentionally avoids network calls.
