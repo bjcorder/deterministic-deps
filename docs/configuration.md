@@ -60,6 +60,18 @@ ecosystems:
 
 Allowlist entries should be narrow and temporary. Prefer fixing declarations or adding lockfiles when practical.
 
+## Validation
+
+Malformed YAML fails the action with a clear parse error because the configured policy cannot be trusted. Invalid individual fields emit warnings and are ignored, so the action falls back to defaults or other valid config entries.
+
+Examples that warn and fall back:
+
+- `mode: report-only`
+- `severity-threshold: urgent`
+- `include: '**/*.tf'`
+- `rules` or `ecosystems` values that are not booleans
+- Unknown ecosystem names or option names
+
 ## Ecosystem Options
 
 | Option                                           | Default | Description                                                                                                                  |

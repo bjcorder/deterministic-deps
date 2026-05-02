@@ -1,6 +1,11 @@
 import * as core from '@actions/core'
 import { DEFAULT_EXCLUDE, DEFAULT_INCLUDE } from './constants'
-import { loadConfig, normalizeMode, normalizeSeverity, splitPatterns } from './config'
+import {
+  loadConfigWithDiagnostics,
+  normalizeMode,
+  normalizeSeverity,
+  splitPatterns
+} from './config'
 import { countBySeverity, writeReports } from './report'
 import { scan, resolveScanRoot } from './scanner'
 import { shouldReportFailure } from './rules'
@@ -9,7 +14,10 @@ async function run(): Promise<void> {
   const workspace = process.env.GITHUB_WORKSPACE ?? process.cwd()
   const scanRoot = resolveScanRoot(workspace, core.getInput('path') || '.')
   const configPath = core.getInput('config') || '.deterministic-deps.yml'
-  const config = loadConfig(scanRoot, configPath)
+  const { config, diagnostics } = loadConfigWithDiagnostics(scanRoot, configPath)
+  for (const diagnostic of diagnostics) {
+    core.warning(diagnostic.message)
+  }
   const mode = normalizeMode(core.getInput('mode'), config.mode ?? 'advisory')
   const severityThreshold = normalizeSeverity(
     core.getInput('severity-threshold'),

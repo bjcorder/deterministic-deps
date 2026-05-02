@@ -44240,9 +44240,20 @@ exports.splitPatterns = splitPatterns;
 exports.normalizeMode = normalizeMode;
 exports.normalizeSeverity = normalizeSeverity;
 exports.loadConfig = loadConfig;
+exports.loadConfigWithDiagnostics = loadConfigWithDiagnostics;
 const node_fs_1 = __importDefault(__nccwpck_require__(3024));
 const node_path_1 = __importDefault(__nccwpck_require__(6760));
 const js_yaml_1 = __importDefault(__nccwpck_require__(4281));
+const VALID_SEVERITIES = ['low', 'medium', 'high'];
+const VALID_MODES = ['advisory', 'enforce'];
+const ECOSYSTEM_OPTIONS = {
+    go: ['requireGoSum'],
+    node: ['requireLockfile', 'allowVersionRangesWithLockfile'],
+    python: ['requireProjectLockfile', 'requireRequirementHashes'],
+    ruby: ['requireLockfile'],
+    rust: ['requireLockfile'],
+    terraform: ['requireProviderLock']
+};
 function splitPatterns(value) {
     if (!value) {
         return [];
@@ -44265,39 +44276,202 @@ function normalizeSeverity(value, fallback = 'low') {
     return fallback;
 }
 function loadConfig(root, configPath) {
+    return loadConfigWithDiagnostics(root, configPath).config;
+}
+function loadConfigWithDiagnostics(root, configPath) {
     const resolved = node_path_1.default.resolve(root, configPath);
     if (!node_fs_1.default.existsSync(resolved)) {
-        return {};
+        return { config: {}, diagnostics: [] };
     }
-    const parsed = js_yaml_1.default.load(node_fs_1.default.readFileSync(resolved, 'utf8'));
-    if (!parsed || typeof parsed !== 'object') {
-        return {};
+    const rawContent = node_fs_1.default.readFileSync(resolved, 'utf8');
+    const parsed = parseYamlConfig(rawContent, configPath);
+    const diagnostics = [];
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        diagnostics.push({
+            message: `${configPath} must contain a YAML mapping at the top level; ignoring config.`
+        });
+        return { config: {}, diagnostics };
     }
     const raw = parsed;
     return {
-        mode: normalizeMode(raw.mode, undefined),
-        severityThreshold: normalizeSeverity(raw['severity-threshold'], undefined),
-        include: Array.isArray(raw.include) ? raw.include.map(String) : undefined,
-        exclude: Array.isArray(raw.exclude) ? raw.exclude.map(String) : undefined,
-        rules: isRecord(raw.rules) ? booleanRecord(raw.rules) : undefined,
-        severityOverrides: isRecord(raw.severity) ? severityRecord(raw.severity) : undefined,
-        allowlist: Array.isArray(raw.allowlist)
-            ? raw.allowlist.map((entry) => ({ ...entry }))
-            : undefined,
-        ecosystems: isRecord(raw.ecosystems) ? raw.ecosystems : undefined
+        config: {
+            mode: readMode(raw, diagnostics),
+            severityThreshold: readSeverity(raw, 'severity-threshold', diagnostics),
+            include: readStringArray(raw, 'include', diagnostics),
+            exclude: readStringArray(raw, 'exclude', diagnostics),
+            rules: readBooleanRecord(raw, 'rules', diagnostics),
+            severityOverrides: readSeverityRecord(raw, diagnostics),
+            allowlist: readAllowlist(raw, diagnostics),
+            ecosystems: readEcosystems(raw, diagnostics)
+        },
+        diagnostics
     };
+}
+function parseYamlConfig(content, configPath) {
+    try {
+        return js_yaml_1.default.load(content);
+    }
+    catch (error) {
+        throw new Error(`Unable to parse ${configPath}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+}
+function readMode(raw, diagnostics) {
+    const value = raw.mode;
+    if (value === undefined) {
+        return undefined;
+    }
+    if (value === 'advisory' || value === 'enforce') {
+        return value;
+    }
+    diagnostics.push({
+        message: `Invalid mode '${String(value)}'; expected one of ${VALID_MODES.join(', ')}.`
+    });
+    return undefined;
+}
+function readSeverity(raw, key, diagnostics) {
+    const value = raw[key];
+    if (value === undefined) {
+        return undefined;
+    }
+    if (isSeverity(value)) {
+        return value;
+    }
+    diagnostics.push({
+        message: `Invalid ${key} '${String(value)}'; expected one of ${VALID_SEVERITIES.join(', ')}.`
+    });
+    return undefined;
+}
+function readStringArray(raw, key, diagnostics) {
+    const value = raw[key];
+    if (value === undefined) {
+        return undefined;
+    }
+    if (Array.isArray(value) && value.every((entry) => typeof entry === 'string')) {
+        return value;
+    }
+    diagnostics.push({
+        message: `Invalid ${key}; expected an array of strings.`
+    });
+    return undefined;
+}
+function readBooleanRecord(raw, key, diagnostics) {
+    const value = raw[key];
+    if (value === undefined) {
+        return undefined;
+    }
+    if (!isRecord(value)) {
+        diagnostics.push({
+            message: `Invalid ${key}; expected a mapping of names to booleans.`
+        });
+        return undefined;
+    }
+    const entries = Object.entries(value).filter(([, enabled]) => {
+        const valid = typeof enabled === 'boolean';
+        if (!valid) {
+            diagnostics.push({
+                message: `Invalid ${key} value '${String(enabled)}'; expected boolean true or false.`
+            });
+        }
+        return valid;
+    });
+    return Object.fromEntries(entries);
+}
+function readSeverityRecord(raw, diagnostics) {
+    const value = raw.severity;
+    if (value === undefined) {
+        return undefined;
+    }
+    if (!isRecord(value)) {
+        diagnostics.push({
+            message: 'Invalid severity; expected a mapping of rule ids to severity names.'
+        });
+        return undefined;
+    }
+    const entries = Object.entries(value).filter(([, severity]) => {
+        const valid = isSeverity(severity);
+        if (!valid) {
+            diagnostics.push({
+                message: `Invalid severity override '${String(severity)}'; expected one of ${VALID_SEVERITIES.join(', ')}.`
+            });
+        }
+        return valid;
+    });
+    return Object.fromEntries(entries);
+}
+function readAllowlist(raw, diagnostics) {
+    const value = raw.allowlist;
+    if (value === undefined) {
+        return undefined;
+    }
+    if (!Array.isArray(value)) {
+        diagnostics.push({
+            message: 'Invalid allowlist; expected an array of entries.'
+        });
+        return undefined;
+    }
+    return value
+        .filter((entry) => {
+        const valid = isRecord(entry);
+        if (!valid) {
+            diagnostics.push({
+                message: 'Invalid allowlist entry; expected a mapping.'
+            });
+        }
+        return valid;
+    })
+        .map((entry) => ({ ...entry }));
+}
+function readEcosystems(raw, diagnostics) {
+    const value = raw.ecosystems;
+    if (value === undefined) {
+        return undefined;
+    }
+    if (!isRecord(value)) {
+        diagnostics.push({
+            message: 'Invalid ecosystems; expected a mapping of ecosystem names to options.'
+        });
+        return undefined;
+    }
+    const ecosystems = {};
+    for (const [ecosystem, options] of Object.entries(value)) {
+        if (!isRecord(options)) {
+            diagnostics.push({
+                message: `Invalid ecosystems.${ecosystem}; expected a mapping of option names to booleans.`
+            });
+            continue;
+        }
+        const knownOptions = ECOSYSTEM_OPTIONS[ecosystem];
+        if (!knownOptions) {
+            diagnostics.push({
+                message: `Unknown ecosystem '${ecosystem}'; known ecosystems are ${Object.keys(ECOSYSTEM_OPTIONS).join(', ')}.`
+            });
+            continue;
+        }
+        const parsedOptions = {};
+        for (const [option, optionValue] of Object.entries(options)) {
+            if (!knownOptions.includes(option)) {
+                diagnostics.push({
+                    message: `Unknown option ecosystems.${ecosystem}.${option}; known options are ${knownOptions.join(', ')}.`
+                });
+                continue;
+            }
+            if (typeof optionValue !== 'boolean') {
+                diagnostics.push({
+                    message: `Invalid ecosystems.${ecosystem}.${option}; expected boolean true or false.`
+                });
+                continue;
+            }
+            parsedOptions[option] = optionValue;
+        }
+        ecosystems[ecosystem] = parsedOptions;
+    }
+    return ecosystems;
+}
+function isSeverity(value) {
+    return value === 'low' || value === 'medium' || value === 'high';
 }
 function isRecord(value) {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
-function booleanRecord(value) {
-    return Object.fromEntries(Object.entries(value).map(([key, enabled]) => [key, enabled !== false]));
-}
-function severityRecord(value) {
-    return Object.fromEntries(Object.entries(value).map(([key, severity]) => [
-        key,
-        normalizeSeverity(String(severity), 'low')
-    ]));
 }
 
 
@@ -44403,7 +44577,10 @@ async function run() {
     const workspace = process.env.GITHUB_WORKSPACE ?? process.cwd();
     const scanRoot = (0, scanner_1.resolveScanRoot)(workspace, core.getInput('path') || '.');
     const configPath = core.getInput('config') || '.deterministic-deps.yml';
-    const config = (0, config_1.loadConfig)(scanRoot, configPath);
+    const { config, diagnostics } = (0, config_1.loadConfigWithDiagnostics)(scanRoot, configPath);
+    for (const diagnostic of diagnostics) {
+        core.warning(diagnostic.message);
+    }
     const mode = (0, config_1.normalizeMode)(core.getInput('mode'), config.mode ?? 'advisory');
     const severityThreshold = (0, config_1.normalizeSeverity)(core.getInput('severity-threshold'), config.severityThreshold ?? 'low');
     const include = (0, config_1.splitPatterns)(core.getInput('include'));

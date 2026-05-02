@@ -10,5 +10,6 @@ All notable changes to this project will be documented in this file.
 - Added parser-backed YAML and JSON checks for GitHub Actions, Compose, and devcontainer image references.
 - Added block-aware Terraform module and provider checks.
 - Added ecosystem-specific config options for lockfile and hash policies.
+- Added config validation diagnostics for invalid fields and malformed YAML.
 - Added Markdown and SARIF report generation.
 - Added open-source project documentation and CI scaffolding.
