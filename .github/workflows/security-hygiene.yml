@@ -34,14 +34,13 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - uses: zizmorcore/zizmor-action@b1d7e1fb5de872772f31590499237e7cce841e8e
         with:
+          inputs: >-
+            ./.github/dependabot.yml
+            ./.github/workflows
+            ./action.yml
           persona: auditor
           min-severity: medium
           min-confidence: medium
-          sarif: zizmor.sarif
-      - uses: github/codeql-action/upload-sarif@ed410739ba306e4ebe5e123421a6bd694e494a2b
-        if: always()
-        with:
-          sarif_file: zizmor.sarif
 
   scorecard:
     name: openssf scorecard
@@ -54,12 +53,12 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
-      - uses: ossf/scorecard-action@99c09fe975337306107572b4fdf4db224cf8e2f2
+      - uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a
         with:
           results_file: scorecard.sarif
           results_format: sarif
           publish_results: true
-      - uses: github/codeql-action/upload-sarif@ed410739ba306e4ebe5e123421a6bd694e494a2b
+      - uses: github/codeql-action/upload-sarif@e46ed2cbd01164d986452f91f178727624ae40d7
         if: always()
         with:
           sarif_file: scorecard.sarif
