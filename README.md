@@ -185,6 +185,12 @@ allowlist:
     ruleId: containers/image-digest
 ```
 
+For large repositories, keep the scan root as narrow as practical and use `include` to target the
+dependency ecosystems you care about. Default excludes already prune common generated and vendor
+directories such as `.git`, `node_modules`, `dist`, `build`, `target`, `.terraform`, virtualenvs,
+and `__pycache__`; add repository-specific generated paths to `exclude` when monorepo tooling writes
+dependencies under other directories.
+
 See [docs/configuration.md](docs/configuration.md) for the full schema.
 
 ## Local Development

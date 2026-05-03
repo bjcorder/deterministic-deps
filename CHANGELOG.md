@@ -23,6 +23,7 @@ All notable changes to this project will be documented in this file.
   partial fingerprints for code scanning alerts.
 - Added release validation workflows, including a manual `v1 tag smoke` workflow for validating a
   semantic version tag before moving the floating `v1` tag.
+- Added scanner guardrail coverage for many dependency files and deeply nested default excludes.
 - Documented v1 limits: static analysis by default, no package registry resolution, no container
   digest existence checks, no broad autofix, and remote validation limited to GitHub commit refs.
 

@@ -36,6 +36,11 @@ Gradle Groovy and Kotlin build files are parsed for common dependency and plugin
 
 Projects can tune lockfile and hash requirements with the `ecosystems` config block. This is intended for cases like library repositories that intentionally do not commit application lockfiles, or repositories that accept registry version ranges when a package manager lockfile is present.
 
+Large repositories can also tune discovery with `include` and `exclude`. Default excludes prune
+common generated and vendor directories before evaluation, but monorepos should add generated output
+paths that are specific to their build system and can narrow `include` to the dependency ecosystems
+they actively want to scan.
+
 ## Remediation Suggestions
 
 Reports can include structured remediation suggestions for findings that have a precise replacement. SARIF includes fixes for safe exact-line replacements, and `patch: true` writes those safe replacements to a unified diff without editing source files.
