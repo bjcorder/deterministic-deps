@@ -1,7 +1,14 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { loadConfig, loadConfigWithDiagnostics } from '../src/config'
+import {
+  loadConfig,
+  loadConfigWithDiagnostics,
+  normalizeBooleanInput,
+  normalizeModeInput,
+  normalizePositiveIntegerInput,
+  normalizeSeverityInput
+} from '../src/config'
 
 function tempRepo(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'deterministic-deps-config-'))
@@ -131,5 +138,61 @@ describe('configuration', () => {
     expect(config.remoteValidation).toBe(true)
     expect(config.remoteValidationTimeoutMs).toBe(2500)
     expect(config.remoteValidationRetries).toBe(2)
+  })
+
+  it('warns on invalid action inputs and falls back deterministically', () => {
+    const diagnostics = [
+      ...normalizeModeInput('sometimes', 'enforce').diagnostics,
+      ...normalizeSeverityInput('urgent', 'medium').diagnostics,
+      ...normalizeBooleanInput('maybe', 'sarif', true).diagnostics,
+      ...normalizeBooleanInput('maybe', 'patch', false).diagnostics,
+      ...normalizeBooleanInput('maybe', 'remote-validation', true).diagnostics,
+      ...normalizePositiveIntegerInput('slow', 'remote-timeout-ms', 5000).diagnostics,
+      ...normalizePositiveIntegerInput('1.5', 'remote-retries', 1).diagnostics
+    ]
+
+    expect(normalizeModeInput('sometimes', 'enforce').value).toBe('enforce')
+    expect(normalizeSeverityInput('urgent', 'medium').value).toBe('medium')
+    expect(normalizeBooleanInput('maybe', 'sarif', true).value).toBe(true)
+    expect(normalizeBooleanInput('maybe', 'patch', false).value).toBe(false)
+    expect(normalizeBooleanInput('maybe', 'remote-validation', true).value).toBe(true)
+    expect(normalizePositiveIntegerInput('slow', 'remote-timeout-ms', 5000).value).toBe(5000)
+    expect(normalizePositiveIntegerInput('1.5', 'remote-retries', 1).value).toBe(1)
+    expect(diagnostics.map((diagnostic) => diagnostic.message)).toEqual([
+      "Invalid action input mode 'sometimes'; expected one of advisory, enforce. Falling back to enforce.",
+      "Invalid action input severity-threshold 'urgent'; expected one of low, medium, high. Falling back to medium.",
+      'Invalid action input sarif; expected boolean true or false. Falling back to true.',
+      'Invalid action input patch; expected boolean true or false. Falling back to false.',
+      'Invalid action input remote-validation; expected boolean true or false. Falling back to true.',
+      'Invalid action input remote-timeout-ms; expected a non-negative integer. Falling back to 5000.',
+      'Invalid action input remote-retries; expected a non-negative integer. Falling back to 1.'
+    ])
+  })
+
+  it('uses valid action inputs and preserves config fallbacks when omitted', () => {
+    expect(normalizeModeInput('', 'enforce')).toEqual({ value: 'enforce', diagnostics: [] })
+    expect(normalizeSeverityInput(undefined, 'high')).toEqual({
+      value: 'high',
+      diagnostics: []
+    })
+    expect(normalizeBooleanInput('', 'patch', true)).toEqual({ value: true, diagnostics: [] })
+    expect(normalizePositiveIntegerInput(undefined, 'remote-retries', 3)).toEqual({
+      value: 3,
+      diagnostics: []
+    })
+
+    expect(normalizeModeInput('advisory', 'enforce')).toEqual({
+      value: 'advisory',
+      diagnostics: []
+    })
+    expect(normalizeSeverityInput('low', 'high')).toEqual({ value: 'low', diagnostics: [] })
+    expect(normalizeBooleanInput('FALSE', 'remote-validation', true)).toEqual({
+      value: false,
+      diagnostics: []
+    })
+    expect(normalizePositiveIntegerInput('0', 'remote-retries', 3)).toEqual({
+      value: 0,
+      diagnostics: []
+    })
   })
 })

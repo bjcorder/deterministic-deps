@@ -44238,9 +44238,13 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.splitPatterns = splitPatterns;
 exports.normalizeMode = normalizeMode;
+exports.normalizeModeInput = normalizeModeInput;
 exports.normalizeSeverity = normalizeSeverity;
+exports.normalizeSeverityInput = normalizeSeverityInput;
 exports.normalizeBoolean = normalizeBoolean;
+exports.normalizeBooleanInput = normalizeBooleanInput;
 exports.normalizePositiveInteger = normalizePositiveInteger;
+exports.normalizePositiveIntegerInput = normalizePositiveIntegerInput;
 exports.loadConfig = loadConfig;
 exports.loadConfigWithDiagnostics = loadConfigWithDiagnostics;
 const node_fs_1 = __importDefault(__nccwpck_require__(3024));
@@ -44272,11 +44276,43 @@ function normalizeMode(value, fallback = 'advisory') {
     }
     return fallback;
 }
+function normalizeModeInput(value, fallback = 'advisory', key = 'mode') {
+    if (value === undefined || value === '') {
+        return { value: fallback, diagnostics: [] };
+    }
+    if (value === 'advisory' || value === 'enforce') {
+        return { value, diagnostics: [] };
+    }
+    return {
+        value: fallback,
+        diagnostics: [
+            {
+                message: `Invalid action input ${key} '${String(value)}'; expected one of ${VALID_MODES.join(', ')}. Falling back to ${fallback}.`
+            }
+        ]
+    };
+}
 function normalizeSeverity(value, fallback = 'low') {
     if (value === 'low' || value === 'medium' || value === 'high') {
         return value;
     }
     return fallback;
+}
+function normalizeSeverityInput(value, fallback = 'low', key = 'severity-threshold') {
+    if (value === undefined || value === '') {
+        return { value: fallback, diagnostics: [] };
+    }
+    if (isSeverity(value)) {
+        return { value, diagnostics: [] };
+    }
+    return {
+        value: fallback,
+        diagnostics: [
+            {
+                message: `Invalid action input ${key} '${String(value)}'; expected one of ${VALID_SEVERITIES.join(', ')}. Falling back to ${fallback}.`
+            }
+        ]
+    };
 }
 function normalizeBoolean(value, fallback) {
     if (value === undefined || value === '') {
@@ -44291,12 +44327,62 @@ function normalizeBoolean(value, fallback) {
     }
     return fallback;
 }
+function normalizeBooleanInput(value, key, fallback) {
+    if (value === undefined || value === '') {
+        return { value: fallback, diagnostics: [] };
+    }
+    const normalized = value.toLowerCase();
+    if (normalized === 'true') {
+        return { value: true, diagnostics: [] };
+    }
+    if (normalized === 'false') {
+        return { value: false, diagnostics: [] };
+    }
+    return {
+        value: fallback,
+        diagnostics: [
+            {
+                message: `Invalid action input ${key}; expected boolean true or false. Falling back to ${String(fallback)}.`
+            }
+        ]
+    };
+}
 function normalizePositiveInteger(value, fallback) {
     if (value === undefined || value === '') {
         return fallback;
     }
+    if (!/^\d+$/.test(value)) {
+        return fallback;
+    }
     const parsed = Number.parseInt(value, 10);
     return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
+}
+function normalizePositiveIntegerInput(value, key, fallback) {
+    if (value === undefined || value === '') {
+        return { value: fallback, diagnostics: [] };
+    }
+    if (!/^\d+$/.test(value)) {
+        return {
+            value: fallback,
+            diagnostics: [
+                {
+                    message: `Invalid action input ${key}; expected a non-negative integer. Falling back to ${fallback}.`
+                }
+            ]
+        };
+    }
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isInteger(parsed) && parsed >= 0) {
+        return { value: parsed, diagnostics: [] };
+    }
+    return {
+        value: fallback,
+        diagnostics: [
+            {
+                message: `Invalid action input ${key}; expected a non-negative integer. Falling back to ${fallback}.`
+            }
+        ]
+    };
 }
 function loadConfig(root, configPath) {
     return loadConfigWithDiagnostics(root, configPath).config;
@@ -44634,16 +44720,33 @@ async function run() {
     for (const diagnostic of diagnostics) {
         core.warning(diagnostic.message);
     }
-    const mode = (0, config_1.normalizeMode)(core.getInput('mode'), config.mode ?? 'advisory');
-    const severityThreshold = (0, config_1.normalizeSeverity)(core.getInput('severity-threshold'), config.severityThreshold ?? 'low');
+    const modeInput = (0, config_1.normalizeModeInput)(core.getInput('mode'), config.mode ?? 'advisory');
+    const severityThresholdInput = (0, config_1.normalizeSeverityInput)(core.getInput('severity-threshold'), config.severityThreshold ?? 'low');
+    const sarifInput = (0, config_1.normalizeBooleanInput)(core.getInput('sarif'), 'sarif', true);
+    const patchInput = (0, config_1.normalizeBooleanInput)(core.getInput('patch'), 'patch', config.patch ?? false);
+    const remoteValidationInput = (0, config_1.normalizeBooleanInput)(core.getInput('remote-validation'), 'remote-validation', config.remoteValidation ?? false);
+    const remoteValidationTimeoutMsInput = (0, config_1.normalizePositiveIntegerInput)(core.getInput('remote-timeout-ms'), 'remote-timeout-ms', config.remoteValidationTimeoutMs ?? 5000);
+    const remoteValidationRetriesInput = (0, config_1.normalizePositiveIntegerInput)(core.getInput('remote-retries'), 'remote-retries', config.remoteValidationRetries ?? 1);
+    for (const diagnostic of [
+        ...modeInput.diagnostics,
+        ...severityThresholdInput.diagnostics,
+        ...sarifInput.diagnostics,
+        ...patchInput.diagnostics,
+        ...remoteValidationInput.diagnostics,
+        ...remoteValidationTimeoutMsInput.diagnostics,
+        ...remoteValidationRetriesInput.diagnostics
+    ]) {
+        core.warning(diagnostic.message);
+    }
+    const mode = modeInput.value;
+    const severityThreshold = severityThresholdInput.value;
     const include = (0, config_1.splitPatterns)(core.getInput('include'));
     const exclude = (0, config_1.splitPatterns)(core.getInput('exclude'));
-    const sarifInput = core.getInput('sarif') || 'true';
-    const sarif = sarifInput.toLowerCase() === 'true';
-    const patch = (0, config_1.normalizeBoolean)(core.getInput('patch'), config.patch ?? false);
-    const remoteValidation = (0, config_1.normalizeBoolean)(core.getInput('remote-validation'), config.remoteValidation ?? false);
-    const remoteValidationTimeoutMs = (0, config_1.normalizePositiveInteger)(core.getInput('remote-timeout-ms'), config.remoteValidationTimeoutMs ?? 5000);
-    const remoteValidationRetries = (0, config_1.normalizePositiveInteger)(core.getInput('remote-retries'), config.remoteValidationRetries ?? 1);
+    const sarif = sarifInput.value;
+    const patch = patchInput.value;
+    const remoteValidation = remoteValidationInput.value;
+    const remoteValidationTimeoutMs = remoteValidationTimeoutMsInput.value;
+    const remoteValidationRetries = remoteValidationRetriesInput.value;
     const result = await (0, scanner_1.scan)({
         root: scanRoot,
         include: include.length > 0 ? include : (config.include ?? constants_1.DEFAULT_INCLUDE),

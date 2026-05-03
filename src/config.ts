@@ -41,12 +41,58 @@ export function normalizeMode(value: string | undefined, fallback: Mode = 'advis
   return fallback
 }
 
+export function normalizeModeInput(
+  value: string | undefined,
+  fallback: Mode = 'advisory',
+  key = 'mode'
+): { value: Mode; diagnostics: ConfigDiagnostic[] } {
+  if (value === undefined || value === '') {
+    return { value: fallback, diagnostics: [] }
+  }
+
+  if (value === 'advisory' || value === 'enforce') {
+    return { value, diagnostics: [] }
+  }
+
+  return {
+    value: fallback,
+    diagnostics: [
+      {
+        message: `Invalid action input ${key} '${String(value)}'; expected one of ${VALID_MODES.join(', ')}. Falling back to ${fallback}.`
+      }
+    ]
+  }
+}
+
 export function normalizeSeverity(value: string | undefined, fallback: Severity = 'low'): Severity {
   if (value === 'low' || value === 'medium' || value === 'high') {
     return value
   }
 
   return fallback
+}
+
+export function normalizeSeverityInput(
+  value: string | undefined,
+  fallback: Severity = 'low',
+  key = 'severity-threshold'
+): { value: Severity; diagnostics: ConfigDiagnostic[] } {
+  if (value === undefined || value === '') {
+    return { value: fallback, diagnostics: [] }
+  }
+
+  if (isSeverity(value)) {
+    return { value, diagnostics: [] }
+  }
+
+  return {
+    value: fallback,
+    diagnostics: [
+      {
+        message: `Invalid action input ${key} '${String(value)}'; expected one of ${VALID_SEVERITIES.join(', ')}. Falling back to ${fallback}.`
+      }
+    ]
+  }
 }
 
 export function normalizeBoolean(value: string | undefined, fallback: boolean): boolean {
@@ -65,13 +111,79 @@ export function normalizeBoolean(value: string | undefined, fallback: boolean): 
   return fallback
 }
 
+export function normalizeBooleanInput(
+  value: string | undefined,
+  key: string,
+  fallback: boolean
+): { value: boolean; diagnostics: ConfigDiagnostic[] } {
+  if (value === undefined || value === '') {
+    return { value: fallback, diagnostics: [] }
+  }
+
+  const normalized = value.toLowerCase()
+  if (normalized === 'true') {
+    return { value: true, diagnostics: [] }
+  }
+  if (normalized === 'false') {
+    return { value: false, diagnostics: [] }
+  }
+
+  return {
+    value: fallback,
+    diagnostics: [
+      {
+        message: `Invalid action input ${key}; expected boolean true or false. Falling back to ${String(fallback)}.`
+      }
+    ]
+  }
+}
+
 export function normalizePositiveInteger(value: string | undefined, fallback: number): number {
   if (value === undefined || value === '') {
     return fallback
   }
 
+  if (!/^\d+$/.test(value)) {
+    return fallback
+  }
+
   const parsed = Number.parseInt(value, 10)
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback
+}
+
+export function normalizePositiveIntegerInput(
+  value: string | undefined,
+  key: string,
+  fallback: number
+): { value: number; diagnostics: ConfigDiagnostic[] } {
+  if (value === undefined || value === '') {
+    return { value: fallback, diagnostics: [] }
+  }
+
+  if (!/^\d+$/.test(value)) {
+    return {
+      value: fallback,
+      diagnostics: [
+        {
+          message: `Invalid action input ${key}; expected a non-negative integer. Falling back to ${fallback}.`
+        }
+      ]
+    }
+  }
+
+  const parsed = Number.parseInt(value, 10)
+  if (Number.isInteger(parsed) && parsed >= 0) {
+    return { value: parsed, diagnostics: [] }
+  }
+
+  return {
+    value: fallback,
+    diagnostics: [
+      {
+        message: `Invalid action input ${key}; expected a non-negative integer. Falling back to ${fallback}.`
+      }
+    ]
+  }
 }
 
 export function loadConfig(root: string, configPath: string): Config {

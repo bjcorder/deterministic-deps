@@ -2,10 +2,10 @@ import * as core from '@actions/core'
 import { DEFAULT_EXCLUDE, DEFAULT_INCLUDE } from './constants'
 import {
   loadConfigWithDiagnostics,
-  normalizeBoolean,
-  normalizeMode,
-  normalizePositiveInteger,
-  normalizeSeverity,
+  normalizeBooleanInput,
+  normalizeModeInput,
+  normalizePositiveIntegerInput,
+  normalizeSeverityInput,
   splitPatterns
 } from './config'
 import { countBySeverity, writeReports } from './report'
@@ -20,28 +20,51 @@ async function run(): Promise<void> {
   for (const diagnostic of diagnostics) {
     core.warning(diagnostic.message)
   }
-  const mode = normalizeMode(core.getInput('mode'), config.mode ?? 'advisory')
-  const severityThreshold = normalizeSeverity(
+
+  const modeInput = normalizeModeInput(core.getInput('mode'), config.mode ?? 'advisory')
+  const severityThresholdInput = normalizeSeverityInput(
     core.getInput('severity-threshold'),
     config.severityThreshold ?? 'low'
   )
-  const include = splitPatterns(core.getInput('include'))
-  const exclude = splitPatterns(core.getInput('exclude'))
-  const sarifInput = core.getInput('sarif') || 'true'
-  const sarif = sarifInput.toLowerCase() === 'true'
-  const patch = normalizeBoolean(core.getInput('patch'), config.patch ?? false)
-  const remoteValidation = normalizeBoolean(
+  const sarifInput = normalizeBooleanInput(core.getInput('sarif'), 'sarif', true)
+  const patchInput = normalizeBooleanInput(core.getInput('patch'), 'patch', config.patch ?? false)
+  const remoteValidationInput = normalizeBooleanInput(
     core.getInput('remote-validation'),
+    'remote-validation',
     config.remoteValidation ?? false
   )
-  const remoteValidationTimeoutMs = normalizePositiveInteger(
+  const remoteValidationTimeoutMsInput = normalizePositiveIntegerInput(
     core.getInput('remote-timeout-ms'),
+    'remote-timeout-ms',
     config.remoteValidationTimeoutMs ?? 5000
   )
-  const remoteValidationRetries = normalizePositiveInteger(
+  const remoteValidationRetriesInput = normalizePositiveIntegerInput(
     core.getInput('remote-retries'),
+    'remote-retries',
     config.remoteValidationRetries ?? 1
   )
+
+  for (const diagnostic of [
+    ...modeInput.diagnostics,
+    ...severityThresholdInput.diagnostics,
+    ...sarifInput.diagnostics,
+    ...patchInput.diagnostics,
+    ...remoteValidationInput.diagnostics,
+    ...remoteValidationTimeoutMsInput.diagnostics,
+    ...remoteValidationRetriesInput.diagnostics
+  ]) {
+    core.warning(diagnostic.message)
+  }
+
+  const mode = modeInput.value
+  const severityThreshold = severityThresholdInput.value
+  const include = splitPatterns(core.getInput('include'))
+  const exclude = splitPatterns(core.getInput('exclude'))
+  const sarif = sarifInput.value
+  const patch = patchInput.value
+  const remoteValidation = remoteValidationInput.value
+  const remoteValidationTimeoutMs = remoteValidationTimeoutMsInput.value
+  const remoteValidationRetries = remoteValidationRetriesInput.value
 
   const result = await scan({
     root: scanRoot,
