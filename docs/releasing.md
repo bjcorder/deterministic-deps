@@ -5,15 +5,18 @@ This repository publishes a packaged JavaScript action. The bundled `dist/index.
 ## Release Checklist
 
 1. Run `npm ci`.
-2. Run `npm run all`.
-3. Run `npm run format`.
-4. Confirm `git diff --exit-code dist package-lock.json` is clean.
-5. Confirm `git diff --check` is clean.
-6. Update `CHANGELOG.md` with the semantic version being released.
-7. Confirm `action.yml`, `README.md`, and `docs/` describe the same supported inputs, outputs,
+2. Run `npm run format`.
+3. Run `npm run audit`.
+4. Run `npm run all`.
+5. Confirm `git diff --exit-code -- dist/index.js dist/index.js.map dist/licenses.txt` is clean.
+6. Confirm `git diff --check` is clean.
+7. Update `CHANGELOG.md` and `docs/release-notes-v1.md` with the semantic version being released.
+8. Confirm `action.yml`, `README.md`, and `docs/` describe the same supported inputs, outputs,
    ecosystems, and v1 limits.
-8. Dogfood the bundled action against this repository and expect zero findings.
-9. Merge the release-prep PR.
+9. Confirm no open blocker issues are required for an advisory-mode v1 release, or list them in the
+   release notes before tagging.
+10. Dogfood the bundled action against this repository and expect zero findings.
+11. Merge the release-prep PR.
 
 ## Tagging v1
 
@@ -77,6 +80,10 @@ The `CHANGELOG.md` entry for a v1 release should identify:
 - Markdown, SARIF, count, and optional patch outputs.
 - Static-by-default behavior and the opt-in scope of remote validation.
 - Conservative remediation suggestions and known v1 limits.
+- Whether there are any open blocker issues for an advisory-mode release.
+
+Use [`release-notes-v1.md`](release-notes-v1.md) as the maintainer-facing release notes source for
+the initial `v1.0.0` GitHub release.
 
 ## Versioning
 

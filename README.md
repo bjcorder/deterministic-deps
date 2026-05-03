@@ -143,7 +143,19 @@ inputs; and non-negative integers for remote timeout and retry inputs.
 
 ## Supported Ecosystems
 
-V1 scans GitHub Actions, Docker and Compose files, devcontainers, Terraform/OpenTofu, npm/Yarn/pnpm, Python, Go, Rust, Maven/Gradle, and Ruby. See [docs/ecosystems.md](docs/ecosystems.md) and [docs/rules.md](docs/rules.md) for the rule catalog.
+| Ecosystem              | V1 coverage                                                                                    |
+| ---------------------- | ---------------------------------------------------------------------------------------------- |
+| GitHub Actions         | Workflow and action `uses:` refs, reusable workflows, and `docker://` action image references. |
+| Containers             | Dockerfiles, Docker Compose files, and devcontainer image references.                          |
+| Terraform and OpenTofu | Git module refs, provider constraints, and `.terraform.lock.hcl` coverage.                     |
+| Node.js                | npm, Yarn, and pnpm manifests and lockfiles.                                                   |
+| Python                 | `requirements*.txt`, `pyproject.toml`, Pipfile, Poetry, uv, and Pipenv lockfile coverage.      |
+| Go                     | `go.mod`, `go.sum`, and git-like replacement refs.                                             |
+| Rust                   | `Cargo.toml`, `Cargo.lock`, and git dependency revisions.                                      |
+| JVM                    | Maven `pom.xml`, Gradle Groovy/Kotlin builds, and Gradle lock or verification metadata.        |
+| Ruby                   | Gemfile dependency refs and `Gemfile.lock` coverage.                                           |
+
+See [docs/ecosystems.md](docs/ecosystems.md) and [docs/rules.md](docs/rules.md) for the full rule catalog.
 
 ## Remote Validation
 
@@ -192,6 +204,18 @@ and `__pycache__`; add repository-specific generated paths to `exclude` when mon
 dependencies under other directories.
 
 See [docs/configuration.md](docs/configuration.md) for the full schema.
+
+## V1 Known Limits
+
+- Static analysis is the default. The action does not resolve package registries, clone dependency
+  sources, or inspect dependency graph APIs.
+- Remote validation is explicit opt-in and limited to immutable GitHub.com or GitHub Enterprise
+  Server commit refs.
+- Container image digest syntax is checked locally, but registry digest existence is not validated.
+- Remediation suggestions are conservative and only produce patches when the deterministic
+  replacement is already present in the scanned source.
+- Parser coverage is intentionally focused on common dependency declarations; use `allowlist`,
+  `rules`, and `ecosystems` configuration for repository-specific policy exceptions.
 
 ## Local Development
 
