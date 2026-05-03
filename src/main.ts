@@ -2,7 +2,9 @@ import * as core from '@actions/core'
 import { DEFAULT_EXCLUDE, DEFAULT_INCLUDE } from './constants'
 import {
   loadConfigWithDiagnostics,
+  normalizeBoolean,
   normalizeMode,
+  normalizePositiveInteger,
   normalizeSeverity,
   splitPatterns
 } from './config'
@@ -27,12 +29,29 @@ async function run(): Promise<void> {
   const exclude = splitPatterns(core.getInput('exclude'))
   const sarifInput = core.getInput('sarif') || 'true'
   const sarif = sarifInput.toLowerCase() === 'true'
+  const remoteValidation = normalizeBoolean(
+    core.getInput('remote-validation'),
+    config.remoteValidation ?? false
+  )
+  const remoteValidationTimeoutMs = normalizePositiveInteger(
+    core.getInput('remote-timeout-ms'),
+    config.remoteValidationTimeoutMs ?? 5000
+  )
+  const remoteValidationRetries = normalizePositiveInteger(
+    core.getInput('remote-retries'),
+    config.remoteValidationRetries ?? 1
+  )
 
   const result = await scan({
     root: scanRoot,
     include: include.length > 0 ? include : (config.include ?? DEFAULT_INCLUDE),
     exclude: exclude.length > 0 ? exclude : (config.exclude ?? DEFAULT_EXCLUDE),
-    config
+    config: {
+      ...config,
+      remoteValidation,
+      remoteValidationTimeoutMs,
+      remoteValidationRetries
+    }
   })
 
   for (const finding of result.findings) {

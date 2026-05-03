@@ -116,6 +116,9 @@ jobs:
 | `exclude`            | common vendor/build dirs   | Newline or comma-separated glob patterns.                                       |
 | `severity-threshold` | `low`                      | Minimum severity that fails the action in enforce mode.                         |
 | `sarif`              | `true`                     | Write a SARIF report for code scanning upload.                                  |
+| `remote-validation`  | `false`                    | Opt in to remote validation of immutable GitHub commit references.              |
+| `remote-timeout-ms`  | `5000`                     | Per-request timeout for remote validation.                                      |
+| `remote-retries`     | `1`                        | Retry count for transient remote validation failures.                           |
 
 ## Outputs
 
@@ -131,6 +134,12 @@ jobs:
 ## Supported Ecosystems
 
 V1 scans GitHub Actions, Docker and Compose files, devcontainers, Terraform/OpenTofu, npm/Yarn/pnpm, Python, Go, Rust, Maven/Gradle, and Ruby. See [docs/ecosystems.md](docs/ecosystems.md) and [docs/rules.md](docs/rules.md) for the rule catalog.
+
+## Remote Validation
+
+By default, the action is fully offline and only checks whether immutable refs are syntactically pinned. Set `remote-validation: true` to make GitHub API requests that confirm pinned GitHub Action SHAs and GitHub-hosted git dependency SHAs exist.
+
+Remote validation may reveal repository names and commit SHAs to GitHub, can be affected by API rate limits, and may be slower than static analysis. Public refs can be validated without credentials; when `GITHUB_TOKEN` is present, the action sends it to GitHub for higher rate limits and private repository access.
 
 ## Configuration
 
@@ -166,4 +175,4 @@ The bundled `dist/index.js` is committed so the action can run directly from rep
 
 ## Security
 
-This action performs static analysis only. It does not fetch package registries, clone dependency sources, or rewrite dependency declarations. Please report vulnerabilities according to [SECURITY.md](SECURITY.md).
+This action performs static analysis by default. It does not fetch package registries, clone dependency sources, or rewrite dependency declarations. Remote validation is explicit opt-in and limited to checking immutable GitHub commit refs. Please report vulnerabilities according to [SECURITY.md](SECURITY.md).

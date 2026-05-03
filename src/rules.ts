@@ -111,9 +111,25 @@ export function evaluateFile(
   return handlers
     .flatMap((handler) => handler(context))
     .map((finding) => applySeverityOverride(finding, config))
-    .filter((finding) => config.rules?.[finding.ruleId] !== false)
-    .filter((finding) => hasRequiredCompanionFile(finding, trackedFiles))
-    .filter((finding) => !isAllowlisted(finding, config))
+    .filter((finding) => shouldKeepFinding(finding, config, trackedFiles))
+}
+
+export function finalizeFindings(
+  findings: Finding[],
+  config: Config,
+  trackedFiles: Set<string>
+): Finding[] {
+  return findings
+    .map((finding) => applySeverityOverride(finding, config))
+    .filter((finding) => shouldKeepFinding(finding, config, trackedFiles))
+}
+
+function shouldKeepFinding(finding: Finding, config: Config, trackedFiles: Set<string>): boolean {
+  return (
+    config.rules?.[finding.ruleId] !== false &&
+    hasRequiredCompanionFile(finding, trackedFiles) &&
+    !isAllowlisted(finding, config)
+  )
 }
 
 function checkGithubActions(context: FileContext): Finding[] {

@@ -5,6 +5,9 @@
 ```yaml
 mode: advisory
 severity-threshold: low
+remote-validation: false
+remote-timeout-ms: 5000
+remote-retries: 1
 
 include:
   - '**/package.json'
@@ -53,6 +56,9 @@ ecosystems:
 | -------------------- | ------------------------------------------------------------------------- |
 | `mode`               | `advisory` or `enforce`.                                                  |
 | `severity-threshold` | `low`, `medium`, or `high`; used only in enforce mode.                    |
+| `remote-validation`  | Opt in to remote validation of immutable GitHub commit refs.              |
+| `remote-timeout-ms`  | Per-request remote validation timeout in milliseconds.                    |
+| `remote-retries`     | Retry count for transient remote validation failures.                     |
 | `include`            | Glob patterns to scan.                                                    |
 | `exclude`            | Glob patterns to skip in addition to built-in vendor/build ignores.       |
 | `rules`              | Map of rule id to `true` or `false`.                                      |
@@ -70,6 +76,8 @@ Examples that warn and fall back:
 
 - `mode: report-only`
 - `severity-threshold: urgent`
+- `remote-validation: yes`
+- `remote-timeout-ms: slow`
 - `include: '**/*.tf'`
 - `rules` or `ecosystems` values that are not booleans
 - Unknown ecosystem names or option names
@@ -87,3 +95,11 @@ Examples that warn and fall back:
 | `ecosystems.jvm.allowDynamicVersionsWithGradleMetadata` | `true`  | Allow Gradle dynamic versions when `gradle.lockfile`, `gradle/dependency-locks/`, or `gradle/verification-metadata.xml` is committed in the project path.                           |
 | `ecosystems.rust.requireLockfile`                       | `true`  | Require `Cargo.lock` next to `Cargo.toml`.                                                                                                                                          |
 | `ecosystems.ruby.requireLockfile`                       | `true`  | Require `Gemfile.lock` next to `Gemfile`.                                                                                                                                           |
+
+## Remote Validation
+
+Remote validation is disabled by default. Static checks still reject mutable refs and accept values that look like full commit SHAs or digests without making network calls.
+
+When `remote-validation: true`, the scanner validates pinned GitHub Action refs and GitHub-hosted git dependency commit refs against the GitHub commits API. Missing commits produce `remote/github-ref` findings. Rate limits, timeouts, and other network failures produce `remote/validation-error` findings with deterministic messages instead of stack traces.
+
+Public GitHub commits can be checked without credentials. If `GITHUB_TOKEN` is available in the environment, it is sent to GitHub to support private repositories and higher rate limits. Enabling remote validation may disclose repository names and commit SHAs to GitHub and can add latency to CI runs.

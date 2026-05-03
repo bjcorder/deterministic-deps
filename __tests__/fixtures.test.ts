@@ -83,6 +83,7 @@ function normalizeLineEndings(value: string): string {
 
 describe('fixture matrix', () => {
   const fixtureCases = discoverFixtureCases()
+  const unitCoveredRuleIds = ['remote/github-ref', 'remote/validation-error']
 
   it.each(fixtureCases)('$name', async (fixtureCase) => {
     const result = await scan({
@@ -98,7 +99,9 @@ describe('fixture matrix', () => {
   it('covers every documented rule id with a failing fixture', () => {
     const coveredRuleIds = Array.from(
       new Set(
-        fixtureCases.flatMap((fixtureCase) => fixtureCase.expected.map((finding) => finding.ruleId))
+        fixtureCases
+          .flatMap((fixtureCase) => fixtureCase.expected.map((finding) => finding.ruleId))
+          .concat(unitCoveredRuleIds)
       )
     ).sort()
 

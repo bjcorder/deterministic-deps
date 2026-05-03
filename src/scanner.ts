@@ -1,18 +1,27 @@
 import path from 'node:path'
 import { glob } from 'glob'
 import { DEFAULT_EXCLUDE, DEFAULT_INCLUDE } from './constants'
-import { evaluateFile } from './rules'
+import { validateRemoteReferences } from './remote'
+import { evaluateFile, finalizeFindings } from './rules'
 import { Config, ScanOptions, ScanResult } from './types'
 
 export async function scan(options: ScanOptions): Promise<ScanResult> {
   const files = await discoverFiles(options.root, options.include, options.exclude, options.config)
   const trackedFiles = new Set(files)
-  const findings = files.flatMap((file) =>
+  const staticFindings = files.flatMap((file) =>
     evaluateFile(options.root, file, options.config, trackedFiles)
   )
+  const remoteFindings =
+    options.config.remoteValidation === true
+      ? finalizeFindings(
+          await validateRemoteReferences(options.root, files, options.config),
+          options.config,
+          trackedFiles
+        )
+      : []
 
   return {
-    findings,
+    findings: [...staticFindings, ...remoteFindings],
     scannedFiles: files
   }
 }

@@ -67,3 +67,12 @@ Local `./` and `../` actions are allowed.
 | ------------------------ | -------- | --------------------------------------------------------------------- |
 | `ruby/lockfile-required` | high     | `Gemfile` requires `Gemfile.lock`.                                    |
 | `ruby/git-ref-sha`       | high     | Gemfile git dependencies must use `ref: "<40-character commit SHA>"`. |
+
+## Remote Validation
+
+Remote validation rules run only when `remote-validation` is enabled.
+
+| Rule                      | Severity | Behavior                                                                                           |
+| ------------------------- | -------- | -------------------------------------------------------------------------------------------------- |
+| `remote/github-ref`       | high     | A pinned GitHub commit SHA used by an action or GitHub-hosted git dependency could not be found.   |
+| `remote/validation-error` | low      | Remote validation could not complete because of timeout, rate limit, authorization, or API errors. |

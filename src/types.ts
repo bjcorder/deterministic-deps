@@ -14,6 +14,9 @@ export interface Finding {
 export interface Config {
   mode?: Mode
   severityThreshold?: Severity
+  remoteValidation?: boolean
+  remoteValidationTimeoutMs?: number
+  remoteValidationRetries?: number
   include?: string[]
   exclude?: string[]
   rules?: Record<string, boolean>

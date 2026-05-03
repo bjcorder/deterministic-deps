@@ -49,6 +49,31 @@ export function normalizeSeverity(value: string | undefined, fallback: Severity 
   return fallback
 }
 
+export function normalizeBoolean(value: string | undefined, fallback: boolean): boolean {
+  if (value === undefined || value === '') {
+    return fallback
+  }
+
+  const normalized = value.toLowerCase()
+  if (normalized === 'true') {
+    return true
+  }
+  if (normalized === 'false') {
+    return false
+  }
+
+  return fallback
+}
+
+export function normalizePositiveInteger(value: string | undefined, fallback: number): number {
+  if (value === undefined || value === '') {
+    return fallback
+  }
+
+  const parsed = Number.parseInt(value, 10)
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback
+}
+
 export function loadConfig(root: string, configPath: string): Config {
   return loadConfigWithDiagnostics(root, configPath).config
 }
@@ -75,6 +100,9 @@ export function loadConfigWithDiagnostics(root: string, configPath: string): Con
     config: {
       mode: readMode(raw, diagnostics),
       severityThreshold: readSeverity(raw, 'severity-threshold', diagnostics),
+      remoteValidation: readBoolean(raw, 'remote-validation', diagnostics),
+      remoteValidationTimeoutMs: readPositiveInteger(raw, 'remote-timeout-ms', diagnostics),
+      remoteValidationRetries: readPositiveInteger(raw, 'remote-retries', diagnostics),
       include: readStringArray(raw, 'include', diagnostics),
       exclude: readStringArray(raw, 'exclude', diagnostics),
       rules: readBooleanRecord(raw, 'rules', diagnostics),
@@ -149,6 +177,46 @@ function readStringArray(
 
   diagnostics.push({
     message: `Invalid ${key}; expected an array of strings.`
+  })
+  return undefined
+}
+
+function readBoolean(
+  raw: Record<string, unknown>,
+  key: string,
+  diagnostics: ConfigDiagnostic[]
+): boolean | undefined {
+  const value = raw[key]
+  if (value === undefined) {
+    return undefined
+  }
+
+  if (typeof value === 'boolean') {
+    return value
+  }
+
+  diagnostics.push({
+    message: `Invalid ${key}; expected boolean true or false.`
+  })
+  return undefined
+}
+
+function readPositiveInteger(
+  raw: Record<string, unknown>,
+  key: string,
+  diagnostics: ConfigDiagnostic[]
+): number | undefined {
+  const value = raw[key]
+  if (value === undefined) {
+    return undefined
+  }
+
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 0) {
+    return value
+  }
+
+  diagnostics.push({
+    message: `Invalid ${key}; expected a non-negative integer.`
   })
   return undefined
 }

@@ -41,6 +41,9 @@ describe('configuration', () => {
       [
         'mode: sometimes',
         'severity-threshold: urgent',
+        'remote-validation: maybe',
+        'remote-timeout-ms: slow',
+        'remote-retries: -1',
         'include: "**/*.tf"',
         'rules:',
         '  containers/image-digest: maybe',
@@ -68,6 +71,9 @@ describe('configuration', () => {
 
     expect(result.config.mode).toBeUndefined()
     expect(result.config.severityThreshold).toBeUndefined()
+    expect(result.config.remoteValidation).toBeUndefined()
+    expect(result.config.remoteValidationTimeoutMs).toBeUndefined()
+    expect(result.config.remoteValidationRetries).toBeUndefined()
     expect(result.config.include).toBeUndefined()
     expect(result.config.rules).toEqual({ 'node/non-deterministic-spec': false })
     expect(result.config.severityOverrides).toEqual({ 'terraform/provider-lock': 'medium' })
@@ -78,6 +84,9 @@ describe('configuration', () => {
       expect.arrayContaining([
         "Invalid mode 'sometimes'; expected one of advisory, enforce.",
         "Invalid severity-threshold 'urgent'; expected one of low, medium, high.",
+        'Invalid remote-validation; expected boolean true or false.',
+        'Invalid remote-timeout-ms; expected a non-negative integer.',
+        'Invalid remote-retries; expected a non-negative integer.',
         'Invalid include; expected an array of strings.',
         "Invalid rules value 'maybe'; expected boolean true or false.",
         "Invalid severity override 'loud'; expected one of low, medium, high.",
@@ -97,5 +106,20 @@ describe('configuration', () => {
     expect(() => loadConfigWithDiagnostics(root, '.deterministic-deps.yml')).toThrow(
       /Unable to parse \.deterministic-deps\.yml/
     )
+  })
+
+  it('loads remote validation options from YAML', () => {
+    const root = tempRepo()
+    fs.writeFileSync(
+      path.join(root, '.deterministic-deps.yml'),
+      ['remote-validation: true', 'remote-timeout-ms: 2500', 'remote-retries: 2', ''].join('\n'),
+      'utf8'
+    )
+
+    const config = loadConfig(root, '.deterministic-deps.yml')
+
+    expect(config.remoteValidation).toBe(true)
+    expect(config.remoteValidationTimeoutMs).toBe(2500)
+    expect(config.remoteValidationRetries).toBe(2)
   })
 })
