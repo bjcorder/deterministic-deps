@@ -68,7 +68,25 @@ describe('deterministic-deps scanner', () => {
     )
     write(root, '.terraform.lock.hcl', '# lock\n')
     write(root, 'package.json', JSON.stringify({ dependencies: { leftpad: '1.0.0' } }, null, 2))
-    write(root, 'package-lock.json', '{}\n')
+    write(
+      root,
+      'package-lock.json',
+      JSON.stringify(
+        {
+          lockfileVersion: 3,
+          packages: {
+            '': { dependencies: { leftpad: '1.0.0' } },
+            'node_modules/leftpad': {
+              version: '1.0.0',
+              resolved: 'https://registry.npmjs.org/leftpad/-/leftpad-1.0.0.tgz',
+              integrity: `sha512-${'a'.repeat(64)}`
+            }
+          }
+        },
+        null,
+        2
+      )
+    )
     write(root, 'requirements.txt', `requests==2.32.0 --hash=sha256:${'b'.repeat(64)}\n`)
     write(root, 'go.mod', 'module example.com/app\n')
     write(root, 'go.sum', 'example.com/module v1.0.0 h1:abc\n')
@@ -115,7 +133,25 @@ describe('deterministic-deps scanner', () => {
   it('honors ecosystem-specific policy options', async () => {
     const root = tempRepo()
     write(root, 'package.json', JSON.stringify({ dependencies: { leftpad: '^1.0.0' } }, null, 2))
-    write(root, 'package-lock.json', '{}\n')
+    write(
+      root,
+      'package-lock.json',
+      JSON.stringify(
+        {
+          lockfileVersion: 3,
+          packages: {
+            '': { dependencies: { leftpad: '^1.0.0' } },
+            'node_modules/leftpad': {
+              version: '1.0.0',
+              resolved: 'https://registry.npmjs.org/leftpad/-/leftpad-1.0.0.tgz',
+              integrity: `sha512-${'a'.repeat(64)}`
+            }
+          }
+        },
+        null,
+        2
+      )
+    )
     write(root, 'requirements.txt', 'requests==2.32.0\n')
     write(root, 'pyproject.toml', '[project]\ndependencies = ["requests"]\n')
     write(root, 'go.mod', 'module example.com/app\n')

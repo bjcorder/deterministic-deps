@@ -30,6 +30,7 @@ Local `./` and `../` actions are allowed.
 | Rule                          | Severity | Behavior                                                                                                                            |
 | ----------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `node/lockfile-required`      | high     | `package.json` dependencies require a package manager lockfile.                                                                     |
+| `node/lockfile-coverage`      | medium   | Registry dependencies require npm, Yarn, or pnpm lockfile entries with integrity metadata.                                           |
 | `node/non-deterministic-spec` | medium   | Ranges, tags, branch refs, and unpinned git specs are flagged. Exact semver, workspace/file links, and git commit SHAs are allowed. |
 
 ## Python

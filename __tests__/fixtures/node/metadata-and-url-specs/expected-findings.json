@@ -1,0 +1,44 @@
+[
+  {
+    "ruleId": "node/non-deterministic-spec",
+    "ecosystem": "node",
+    "file": "package.json",
+    "line": 3,
+    "severity": "medium"
+  },
+  {
+    "ruleId": "node/non-deterministic-spec",
+    "ecosystem": "node",
+    "file": "package.json",
+    "line": 4,
+    "severity": "medium"
+  },
+  {
+    "ruleId": "node/non-deterministic-spec",
+    "ecosystem": "node",
+    "file": "package.json",
+    "line": 5,
+    "severity": "medium"
+  },
+  {
+    "ruleId": "node/non-deterministic-spec",
+    "ecosystem": "node",
+    "file": "package.json",
+    "line": 8,
+    "severity": "medium"
+  },
+  {
+    "ruleId": "node/non-deterministic-spec",
+    "ecosystem": "node",
+    "file": "package.json",
+    "line": 11,
+    "severity": "medium"
+  },
+  {
+    "ruleId": "node/non-deterministic-spec",
+    "ecosystem": "node",
+    "file": "package.json",
+    "line": 13,
+    "severity": "medium"
+  }
+]

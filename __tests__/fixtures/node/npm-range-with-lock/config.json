@@ -1,0 +1,7 @@
+{
+  "ecosystems": {
+    "node": {
+      "allowVersionRangesWithLockfile": true
+    }
+  }
+}
