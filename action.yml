@@ -1,10 +1,10 @@
 name: Deterministic Deps
 author: Brian Corder
-description: Enforce deterministic dependency declarations across ecosystems.
+description: Detect non-deterministic dependency declarations across ecosystems.
 
 inputs:
   mode:
-    description: Reporting mode. Use advisory to report only, or enforce to fail at the configured severity threshold.
+    description: Reporting mode. Use advisory to report only, or enforce to fail at the configured severity threshold. Defaults to advisory.
     required: false
   path:
     description: Repository path to scan.
@@ -23,22 +23,22 @@ inputs:
     required: false
     default: ''
   severity-threshold:
-    description: Minimum severity that fails the action in enforce mode.
+    description: Minimum severity that fails the action in enforce mode. Defaults to low.
     required: false
   sarif:
-    description: Whether to write a SARIF report.
+    description: Whether to write a SARIF report. Defaults to true.
     required: false
   patch:
-    description: Whether to write a unified diff with safe remediation suggestions.
+    description: Whether to write a unified diff with safe remediation suggestions. Defaults to false.
     required: false
   remote-validation:
-    description: Opt in to remote validation of immutable GitHub commit references.
+    description: Opt in to remote validation of immutable GitHub commit references. Defaults to false.
     required: false
   remote-timeout-ms:
-    description: Per-request timeout for remote validation.
+    description: Per-request timeout for remote validation. Defaults to 5000.
     required: false
   remote-retries:
-    description: Retry count for transient remote validation failures.
+    description: Retry count for transient remote validation failures. Defaults to 1.
     required: false
 
 outputs:
