@@ -14,6 +14,8 @@ npm, Yarn, pnpm, Poetry, uv, Pipenv, Go, Rust, Bundler, Maven, and Gradle often 
 
 GitHub Actions workflows, Compose files, and devcontainer JSON files are parsed before rules are evaluated so comments and unrelated text are ignored. Terraform/OpenTofu checks are block-aware for module sources and provider constraints.
 
+Node package manifests are parsed as JSON. The scanner evaluates `dependencies`, `devDependencies`, `peerDependencies`, `optionalDependencies`, string-valued `bundledDependencies`, `overrides`, `resolutions`, and `packageManager`. npm, Yarn, and pnpm lockfiles are parsed locally to confirm registry dependency coverage and integrity metadata. Git, GitHub shorthand, aliases, and URL/tarball specs are still checked for immutable commit or content-addressed references because a lockfile cannot make a floating source declaration safe for policy review.
+
 ## Policy Options
 
 Projects can tune lockfile and hash requirements with the `ecosystems` config block. This is intended for cases like library repositories that intentionally do not commit application lockfiles, or repositories that accept registry version ranges when a package manager lockfile is present.

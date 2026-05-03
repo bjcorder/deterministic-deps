@@ -1,0 +1,17 @@
+lockfileVersion: '9.0'
+
+importers:
+  .:
+    dependencies:
+      leftpad:
+        specifier: 1.0.0
+        version: 1.0.0
+    devDependencies: {}
+
+packages:
+  leftpad@1.0.0:
+    resolution:
+      integrity: sha512-ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+  minimist@1.2.8:
+    resolution:
+      integrity: sha512-1111111111111111111111111111111111111111111111111111111111111111

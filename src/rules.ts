@@ -32,6 +32,21 @@ interface TerraformBlock {
 
 type RuleHandler = (context: FileContext) => Finding[]
 
+interface NodeDependencyEntry {
+  section: string
+  name: string
+  spec: string
+  line: number
+}
+
+interface NodeLockfile {
+  type: 'npm' | 'yarn' | 'pnpm'
+  path: string
+  dependencies: Set<string>
+  specs: Set<string>
+  integrityDependencies: Set<string>
+}
+
 const handlers: RuleHandler[] = [
   checkGithubActions,
   checkDockerLikeFiles,
@@ -337,17 +352,17 @@ function checkNode(context: FileContext): Finding[] {
 
   const findings: Finding[] = []
   const directory = path.dirname(context.absolutePath)
-  const hasLock = ['package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock', 'pnpm-lock.yaml'].some(
-    (lock) => fs.existsSync(path.join(directory, lock))
-  )
+  const lockfiles = readNodeLockfiles(directory)
+  const hasLock = lockfiles.length > 0
   const json = safeJson(context.content)
   if (!json) {
     return []
   }
 
+  const entries = nodeDependencyEntries(json, context.lines)
   if (
     !hasLock &&
-    hasRuntimeDependencies(json) &&
+    entries.some((entry) => entry.section !== 'packageManager') &&
     ecosystemBoolean(context.config, 'node', 'requireLockfile', true)
   ) {
     findings.push(
@@ -363,27 +378,39 @@ function checkNode(context: FileContext): Finding[] {
     )
   }
 
-  for (const [section, dependencies] of dependencySections(json)) {
-    for (const [name, spec] of Object.entries(dependencies)) {
-      if (
-        typeof spec !== 'string' ||
-        isNodeSpecDeterministic(spec) ||
-        (hasLock &&
-          ecosystemBoolean(context.config, 'node', 'allowVersionRangesWithLockfile', false) &&
-          isNodeRegistryVersionSpec(spec))
-      ) {
-        continue
-      }
+  for (const entry of entries) {
+    const deterministic = isNodeSpecDeterministic(entry.spec)
+    const registrySpec = isNodeRegistryVersionSpec(entry.spec)
+    const rangesAllowedWithLock =
+      hasLock &&
+      registrySpec &&
+      ecosystemBoolean(context.config, 'node', 'allowVersionRangesWithLockfile', false)
 
+    if (!deterministic && !rangesAllowedWithLock) {
       findings.push(
         finding(
           'node/non-deterministic-spec',
           'node',
           context.file,
-          lineForText(context.lines, `"${name}"`),
+          entry.line,
           'medium',
-          `${section} dependency '${name}' uses non-deterministic spec '${spec}'.`,
-          'Use exact versions with a committed lockfile, workspace/file links, or git commit SHAs.'
+          `${entry.section} dependency '${entry.name}' uses non-deterministic spec '${entry.spec}'.`,
+          'Use exact versions with lockfile coverage, workspace/file links, or immutable git and URL references.'
+        )
+      )
+      continue
+    }
+
+    if (hasLock && registrySpec && !hasNodeLockCoverage(entry, lockfiles)) {
+      findings.push(
+        finding(
+          'node/lockfile-coverage',
+          'node',
+          context.file,
+          entry.line,
+          'medium',
+          `${entry.section} dependency '${entry.name}' is not covered by a lockfile entry with integrity metadata.`,
+          'Regenerate and commit the npm, Yarn, or pnpm lockfile so registry dependencies include resolved integrity.'
         )
       )
     }
@@ -782,33 +809,379 @@ function safeJson(content: string): Record<string, unknown> | undefined {
   }
 }
 
-function hasRuntimeDependencies(json: Record<string, unknown>): boolean {
-  return dependencySections(json).some(([, dependencies]) => Object.keys(dependencies).length > 0)
+function nodeDependencyEntries(
+  json: Record<string, unknown>,
+  lines: string[]
+): NodeDependencyEntry[] {
+  const entries: NodeDependencyEntry[] = []
+  const dependencySectionNames = [
+    'dependencies',
+    'devDependencies',
+    'peerDependencies',
+    'optionalDependencies',
+    'bundledDependencies',
+    'bundleDependencies'
+  ]
+
+  for (const section of dependencySectionNames) {
+    const dependencies = json[section]
+    if (!isRecord(dependencies)) {
+      continue
+    }
+
+    for (const [name, spec] of Object.entries(dependencies)) {
+      if (typeof spec === 'string') {
+        entries.push({
+          section,
+          name,
+          spec,
+          line: lineForJsonProperty(lines, name, spec)
+        })
+      }
+    }
+  }
+
+  entries.push(...collectNodeOverrideEntries(json.overrides, 'overrides', lines))
+  entries.push(...collectNodeOverrideEntries(json.resolutions, 'resolutions', lines))
+
+  if (typeof json.packageManager === 'string') {
+    entries.push({
+      section: 'packageManager',
+      name: 'packageManager',
+      spec: json.packageManager,
+      line: lineForJsonProperty(lines, 'packageManager', json.packageManager)
+    })
+  }
+
+  return entries
 }
 
-function dependencySections(
-  json: Record<string, unknown>
-): Array<[string, Record<string, unknown>]> {
-  return ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']
-    .map((section) => [section, json[section]] as const)
-    .filter(
-      (entry): entry is [string, Record<string, unknown>] =>
-        Boolean(entry[1]) && typeof entry[1] === 'object'
-    )
+function collectNodeOverrideEntries(
+  value: unknown,
+  section: string,
+  lines: string[],
+  parentName?: string
+): NodeDependencyEntry[] {
+  if (typeof value === 'string' && parentName) {
+    return [
+      {
+        section,
+        name: parentName,
+        spec: value,
+        line: lineForJsonProperty(lines, parentName, value)
+      }
+    ]
+  }
+
+  if (!isRecord(value)) {
+    return []
+  }
+
+  return Object.entries(value).flatMap(([name, nested]) => {
+    const dependencyName = name === '.' && parentName ? parentName : name
+    if (typeof nested === 'string') {
+      return [
+        {
+          section,
+          name: dependencyName,
+          spec: nested,
+          line: lineForJsonProperty(lines, name, nested)
+        }
+      ]
+    }
+
+    return collectNodeOverrideEntries(nested, section, lines, dependencyName)
+  })
 }
 
-function isNodeSpecDeterministic(spec: string): boolean {
+function isNodeSpecDeterministic(rawSpec: string): boolean {
+  const spec = rawSpec.trim()
   if (/^(workspace:|file:|link:|portal:|patch:)/.test(spec)) {
     return true
   }
-  if (/^(git\+)?https?:.*#[a-f0-9]{40}$/i.test(spec) || /^github:[^#]+#[a-f0-9]{40}$/i.test(spec)) {
+  if (isNodePackageManagerSpec(spec)) {
+    return isExactVersion(spec.slice(spec.lastIndexOf('@') + 1))
+  }
+  if (isNodeAliasSpec(spec)) {
+    const aliasedSpec = spec.slice(spec.lastIndexOf('@') + 1)
+    return isExactVersion(aliasedSpec)
+  }
+  if (isNodeGitSpec(spec)) {
+    return hasCommitReference(spec)
+  }
+  if (/^https?:/.test(spec)) {
+    return hasContentAddressedUrlReference(spec)
+  }
+  if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:#[^#]+)?$/.test(spec)) {
+    return hasCommitReference(spec)
+  }
+  if (/^github:[^#]+#[a-f0-9]{40}$/i.test(spec)) {
     return true
   }
-  return /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(spec)
+  return isExactVersion(spec)
 }
 
 function isNodeRegistryVersionSpec(spec: string): boolean {
-  return !/^(git\+|git:|github:|https?:|ssh:|file:|workspace:|link:|portal:|patch:)/.test(spec)
+  const trimmed = spec.trim()
+  return (
+    !/^(git\+|git:|github:|https?:|ssh:|file:|workspace:|link:|portal:|patch:)/.test(trimmed) &&
+    !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:#[^#]+)?$/.test(trimmed)
+  )
+}
+
+function isNodePackageManagerSpec(spec: string): boolean {
+  return /^(npm|yarn|pnpm)@/.test(spec)
+}
+
+function isNodeAliasSpec(spec: string): boolean {
+  return /^npm:[^@]+@/.test(spec) || /^npm:@[^/]+\/[^@]+@/.test(spec)
+}
+
+function isNodeGitSpec(spec: string): boolean {
+  return /^(git\+|git:|ssh:|github:)/.test(spec) || isGitReference(spec)
+}
+
+function hasContentAddressedUrlReference(spec: string): boolean {
+  return (
+    DIGEST_PATTERN.test(spec) ||
+    /(?:sha256|sha512)[-=][A-Za-z0-9+/=_-]{32,}/i.test(spec) ||
+    /[?#&](?:checksum|integrity|hash)=/.test(spec)
+  )
+}
+
+function readNodeLockfiles(directory: string): NodeLockfile[] {
+  const lockfiles: NodeLockfile[] = []
+  for (const name of ['package-lock.json', 'npm-shrinkwrap.json']) {
+    const absolutePath = path.join(directory, name)
+    if (fs.existsSync(absolutePath)) {
+      lockfiles.push(parseNpmLockfile(absolutePath))
+    }
+  }
+
+  const yarnLock = path.join(directory, 'yarn.lock')
+  if (fs.existsSync(yarnLock)) {
+    lockfiles.push(parseYarnLockfile(yarnLock))
+  }
+
+  const pnpmLock = path.join(directory, 'pnpm-lock.yaml')
+  if (fs.existsSync(pnpmLock)) {
+    lockfiles.push(parsePnpmLockfile(pnpmLock))
+  }
+
+  return lockfiles
+}
+
+function parseNpmLockfile(absolutePath: string): NodeLockfile {
+  const lockfile: NodeLockfile = {
+    type: 'npm',
+    path: absolutePath,
+    dependencies: new Set(),
+    specs: new Set(),
+    integrityDependencies: new Set()
+  }
+  const json = safeJson(fs.readFileSync(absolutePath, 'utf8'))
+  if (!json) {
+    return lockfile
+  }
+
+  const packages = json.packages
+  if (isRecord(packages)) {
+    for (const [packagePath, metadata] of Object.entries(packages)) {
+      if (!isRecord(metadata) || packagePath === '') {
+        continue
+      }
+
+      const packageName = nodePackageNameFromPath(packagePath)
+      if (packageName) {
+        lockfile.dependencies.add(packageName)
+      }
+      if (typeof metadata.integrity === 'string' && packageName) {
+        lockfile.integrityDependencies.add(packageName)
+      }
+      if (typeof metadata.version === 'string' && packageName) {
+        lockfile.specs.add(`${packageName}@${metadata.version}`)
+      }
+    }
+  }
+
+  collectNpmDependencyEntries(json.dependencies, lockfile)
+  return lockfile
+}
+
+function collectNpmDependencyEntries(value: unknown, lockfile: NodeLockfile): void {
+  if (!isRecord(value)) {
+    return
+  }
+
+  for (const [name, metadata] of Object.entries(value)) {
+    lockfile.dependencies.add(name)
+    if (isRecord(metadata)) {
+      if (typeof metadata.integrity === 'string') {
+        lockfile.integrityDependencies.add(name)
+      }
+      if (typeof metadata.version === 'string') {
+        lockfile.specs.add(`${name}@${metadata.version}`)
+      }
+      collectNpmDependencyEntries(metadata.dependencies, lockfile)
+    }
+  }
+}
+
+function parseYarnLockfile(absolutePath: string): NodeLockfile {
+  const content = fs.readFileSync(absolutePath, 'utf8')
+  const lockfile: NodeLockfile = {
+    type: 'yarn',
+    path: absolutePath,
+    dependencies: new Set(),
+    specs: new Set(),
+    integrityDependencies: new Set()
+  }
+
+  let activeDependencies: string[] = []
+  for (const line of content.split(/\r?\n/)) {
+    const match = line.match(/^"?(@?[^",:\s]+)@([^",:\s]+)"?(?:,.*)?:\s*$/)
+    if (match) {
+      activeDependencies = [match[1]]
+      lockfile.dependencies.add(match[1])
+      lockfile.specs.add(`${match[1]}@${match[2]}`)
+      continue
+    }
+
+    if (/^\s+(?:integrity\s+|checksum:)/i.test(line)) {
+      activeDependencies.forEach((dependency) => lockfile.integrityDependencies.add(dependency))
+    }
+  }
+
+  for (const match of content.matchAll(/^"?(@?[^",:\s]+)@([^",:\s]+)"?(?:,.*)?:\s*$/gm)) {
+    lockfile.dependencies.add(match[1])
+    lockfile.specs.add(`${match[1]}@${match[2]}`)
+  }
+
+  const parsed = parseYamlDocuments(content)[0]
+  if (isRecord(parsed)) {
+    for (const [key, metadata] of Object.entries(parsed)) {
+      const parsedKey = key.match(/^(@?[^@]+)@(.+)$/)
+      if (parsedKey) {
+        lockfile.dependencies.add(parsedKey[1])
+        lockfile.specs.add(`${parsedKey[1]}@${parsedKey[2]}`)
+      }
+      if (isRecord(metadata) && (metadata.integrity || metadata.checksum)) {
+        if (parsedKey) {
+          lockfile.integrityDependencies.add(parsedKey[1])
+        }
+      }
+    }
+  }
+
+  return lockfile
+}
+
+function parsePnpmLockfile(absolutePath: string): NodeLockfile {
+  const lockfile: NodeLockfile = {
+    type: 'pnpm',
+    path: absolutePath,
+    dependencies: new Set(),
+    specs: new Set(),
+    integrityDependencies: new Set()
+  }
+  const parsed = parseYamlDocuments(fs.readFileSync(absolutePath, 'utf8'))[0]
+  if (!isRecord(parsed)) {
+    return lockfile
+  }
+
+  collectPnpmDependencySpecs(parsed.importers, lockfile)
+  collectPnpmPackageEntries(parsed.packages, lockfile)
+  return lockfile
+}
+
+function collectPnpmDependencySpecs(value: unknown, lockfile: NodeLockfile): void {
+  if (!isRecord(value)) {
+    return
+  }
+
+  for (const importer of Object.values(value)) {
+    if (!isRecord(importer)) {
+      continue
+    }
+
+    for (const section of ['dependencies', 'devDependencies', 'optionalDependencies']) {
+      const dependencies = importer[section]
+      if (!isRecord(dependencies)) {
+        continue
+      }
+
+      for (const [name, metadata] of Object.entries(dependencies)) {
+        lockfile.dependencies.add(name)
+        if (typeof metadata === 'string') {
+          lockfile.specs.add(`${name}@${metadata}`)
+        } else if (isRecord(metadata) && typeof metadata.specifier === 'string') {
+          lockfile.specs.add(`${name}@${metadata.specifier}`)
+        }
+      }
+    }
+  }
+}
+
+function collectPnpmPackageEntries(value: unknown, lockfile: NodeLockfile): void {
+  if (!isRecord(value)) {
+    return
+  }
+
+  for (const [key, metadata] of Object.entries(value)) {
+    const parsedKey = key.match(/^\/?(@?[^/]+(?:\/[^/]+)?)(?:@|\/)([^/()]+)(?:\(|$)/)
+    if (parsedKey) {
+      lockfile.dependencies.add(parsedKey[1])
+      lockfile.specs.add(`${parsedKey[1]}@${parsedKey[2]}`)
+    }
+    if (
+      parsedKey &&
+      isRecord(metadata) &&
+      isRecord(metadata.resolution) &&
+      metadata.resolution.integrity
+    ) {
+      lockfile.integrityDependencies.add(parsedKey[1])
+    }
+  }
+}
+
+function hasNodeLockCoverage(entry: NodeDependencyEntry, lockfiles: NodeLockfile[]): boolean {
+  if (entry.section === 'packageManager') {
+    return true
+  }
+
+  const packageName = nodeRegistryPackageName(entry.name, entry.spec)
+  const exactSpec = nodeExactRegistrySpec(entry.spec)
+  return lockfiles.some((lockfile) => {
+    const hasPackage = lockfile.dependencies.has(packageName)
+    const hasSpec = exactSpec ? lockfile.specs.has(`${packageName}@${exactSpec}`) : true
+    return hasPackage && hasSpec && lockfile.integrityDependencies.has(packageName)
+  })
+}
+
+function nodeRegistryPackageName(name: string, spec: string): string {
+  const aliasMatch = spec.match(/^npm:(@?[^@]+(?:\/[^@]+)?)@/)
+  return aliasMatch ? aliasMatch[1] : name
+}
+
+function nodeExactRegistrySpec(spec: string): string | undefined {
+  const trimmed = spec.trim()
+  if (isExactVersion(trimmed)) {
+    return trimmed
+  }
+  const aliasMatch = trimmed.match(/^npm:@?[^@]+(?:\/[^@]+)?@(.+)$/)
+  return aliasMatch && isExactVersion(aliasMatch[1]) ? aliasMatch[1] : undefined
+}
+
+function nodePackageNameFromPath(packagePath: string): string | undefined {
+  const normalized = packagePath.replaceAll('\\', '/')
+  const marker = 'node_modules/'
+  const index = normalized.lastIndexOf(marker)
+  if (index === -1) {
+    return undefined
+  }
+
+  const parts = normalized.slice(index + marker.length).split('/')
+  return parts[0]?.startsWith('@') ? `${parts[0]}/${parts[1]}` : parts[0]
 }
 
 function ecosystemBoolean(
@@ -824,6 +1197,17 @@ function ecosystemBoolean(
 function lineForText(lines: string[], text: string): number {
   const index = lines.findIndex((line) => line.includes(text))
   return index === -1 ? 1 : index + 1
+}
+
+function lineForJsonProperty(lines: string[], key: string, value?: string): number {
+  const escapedKey = escapeRegExp(JSON.stringify(key).slice(1, -1))
+  const escapedValue = value ? escapeRegExp(JSON.stringify(value).slice(1, -1)) : undefined
+  const propertyPattern = new RegExp(`"${escapedKey}"\\s*:`)
+  const valuePattern = escapedValue ? new RegExp(`:\\s*"${escapedValue}"`) : undefined
+  const index = lines.findIndex(
+    (line) => propertyPattern.test(line) && (!valuePattern || valuePattern.test(line))
+  )
+  return index === -1 ? lineForText(lines, `"${key}"`) : index + 1
 }
 
 function lineForYamlScalar(lines: string[], key: string, value: string): number {

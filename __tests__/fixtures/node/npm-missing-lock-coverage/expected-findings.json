@@ -1,0 +1,9 @@
+[
+  {
+    "ruleId": "node/lockfile-coverage",
+    "ecosystem": "node",
+    "file": "package.json",
+    "line": 3,
+    "severity": "medium"
+  }
+]

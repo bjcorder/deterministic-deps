@@ -1,0 +1,14 @@
+{
+  "dependencies": {
+    "alias-range": "npm:leftpad@^1.0.0",
+    "floating-github": "octo-org/tool#main",
+    "floating-tarball": "https://example.com/pkg.tgz"
+  },
+  "overrides": {
+    "undici": "^7.0.0"
+  },
+  "resolutions": {
+    "**/minimist": "latest"
+  },
+  "packageManager": "npm@latest"
+}

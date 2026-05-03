@@ -1,0 +1,9 @@
+"leftpad@1.0.0":
+  version "1.0.0"
+  resolved "https://registry.yarnpkg.com/leftpad/-/leftpad-1.0.0.tgz#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  integrity sha512-dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+
+"minimist@1.2.8":
+  version "1.2.8"
+  resolved "https://registry.yarnpkg.com/minimist/-/minimist-1.2.8.tgz#bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  integrity sha512-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
