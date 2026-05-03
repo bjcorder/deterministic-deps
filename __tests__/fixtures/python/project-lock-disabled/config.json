@@ -1,0 +1,7 @@
+{
+  "ecosystems": {
+    "python": {
+      "requireProjectLockfile": false
+    }
+  }
+}

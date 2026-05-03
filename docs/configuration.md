@@ -79,7 +79,7 @@ Examples that warn and fall back:
 | `ecosystems.node.requireLockfile`                | `true`  | Require npm, Yarn, or pnpm lockfiles when `package.json` declares dependencies.                                              |
 | `ecosystems.node.allowVersionRangesWithLockfile` | `false` | Allow registry version ranges such as `^1.2.3` only when npm, Yarn, or pnpm lockfile coverage with integrity metadata is committed. Git and URL specs still require immutable refs. |
 | `ecosystems.python.requireProjectLockfile`       | `true`  | Require `poetry.lock`, `uv.lock`, or `Pipfile.lock` for Python project files.                                                |
-| `ecosystems.python.requireRequirementHashes`     | `true`  | Require `requirements*.txt` entries to use exact pins with `--hash=` values.                                                 |
+| `ecosystems.python.requireRequirementHashes`     | `true`  | Require logical `requirements*.txt` entries to use exact pins with `--hash=` values. Line continuations are evaluated as one entry. |
 | `ecosystems.terraform.requireProviderLock`       | `true`  | Require exact provider versions or `.terraform.lock.hcl` for provider constraints.                                           |
 | `ecosystems.go.requireGoSum`                     | `true`  | Require `go.sum` next to `go.mod`.                                                                                           |
 | `ecosystems.rust.requireLockfile`                | `true`  | Require `Cargo.lock` next to `Cargo.toml`.                                                                                   |
