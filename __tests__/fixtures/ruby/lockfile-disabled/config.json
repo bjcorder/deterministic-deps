@@ -1,0 +1,7 @@
+{
+  "ecosystems": {
+    "ruby": {
+      "requireLockfile": false
+    }
+  }
+}

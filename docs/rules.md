@@ -66,4 +66,4 @@ Local `./` and `../` actions are allowed.
 | Rule                     | Severity | Behavior                                                      |
 | ------------------------ | -------- | ------------------------------------------------------------- |
 | `ruby/lockfile-required` | high     | `Gemfile` requires `Gemfile.lock`.                            |
-| `ruby/git-ref-sha`       | high     | Git dependencies must use `ref: "<40-character commit SHA>"`. |
+| `ruby/git-ref-sha`       | high     | Gemfile git dependencies must use `ref: "<40-character commit SHA>"`. |

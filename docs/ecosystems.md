@@ -22,6 +22,8 @@ Go module files are parsed by directive, including single-line and block `requir
 
 Rust manifests are parsed by dependency table, including package, workspace, build, dev, and target dependency sections. Comments and unrelated strings are ignored, and git dependencies must include a full `rev` commit SHA rather than only a branch or tag.
 
+Gemfiles are parsed as logical `gem` declarations, including grouped and multi-line declarations. Comments and unrelated strings are ignored, and git dependencies must use a full `ref` commit SHA rather than branch or tag options alone.
+
 ## Policy Options
 
 Projects can tune lockfile and hash requirements with the `ecosystems` config block. This is intended for cases like library repositories that intentionally do not commit application lockfiles, or repositories that accept registry version ranges when a package manager lockfile is present.

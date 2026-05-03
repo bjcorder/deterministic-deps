@@ -1,0 +1,23 @@
+[
+  {
+    "ruleId": "ruby/git-ref-sha",
+    "ecosystem": "ruby",
+    "file": "Gemfile",
+    "line": 5,
+    "severity": "high"
+  },
+  {
+    "ruleId": "ruby/git-ref-sha",
+    "ecosystem": "ruby",
+    "file": "Gemfile",
+    "line": 8,
+    "severity": "high"
+  },
+  {
+    "ruleId": "ruby/git-ref-sha",
+    "ecosystem": "ruby",
+    "file": "Gemfile",
+    "line": 17,
+    "severity": "high"
+  }
+]

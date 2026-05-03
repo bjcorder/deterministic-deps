@@ -67,6 +67,11 @@ interface RustDependencyEntry {
   line: number
 }
 
+interface RubyGemEntry {
+  text: string
+  line: number
+}
+
 const handlers: RuleHandler[] = [
   checkGithubActions,
   checkDockerLikeFiles,
@@ -1072,23 +1077,129 @@ function checkRuby(context: FileContext): Finding[] {
     )
   }
 
-  context.lines.forEach((line, index) => {
-    if (line.includes('git:') && !/ref:\s*['"][a-f0-9]{40}['"]/i.test(line)) {
+  for (const gem of parseRubyGemEntries(context.lines)) {
+    if (/\bgit:/.test(gem.text) && !/\bref:\s*['"][a-f0-9]{40}['"]/i.test(gem.text)) {
       findings.push(
         finding(
           'ruby/git-ref-sha',
           'ruby',
           context.file,
-          index + 1,
+          gem.line,
           'high',
-          `Ruby git dependency '${line.trim()}' does not pin a ref commit SHA.`,
+          `Ruby git dependency '${gem.text}' does not pin a ref commit SHA.`,
           'Add ref: "<40-character commit SHA>" to git dependencies.'
         )
       )
     }
-  })
+  }
 
   return findings
+}
+
+function parseRubyGemEntries(lines: string[]): RubyGemEntry[] {
+  const entries: RubyGemEntry[] = []
+  let active:
+    | {
+        text: string
+        line: number
+        parenDepth: number
+      }
+    | undefined
+
+  lines.forEach((line, index) => {
+    const stripped = stripRubyComment(line).trim()
+    if (!stripped) {
+      return
+    }
+
+    if (active) {
+      active.text = `${active.text} ${stripped}`.replace(/\s+/g, ' ')
+      active.parenDepth += parenDelta(stripped)
+      if (active.parenDepth <= 0 && !/,\s*$/.test(stripped)) {
+        entries.push({
+          text: active.text,
+          line: active.line
+        })
+        active = undefined
+      }
+      return
+    }
+
+    if (!/^gem(?:\s+|\()/.test(stripped)) {
+      return
+    }
+
+    const parenDepth = parenDelta(stripped)
+    if (parenDepth > 0 || /,\s*$/.test(stripped)) {
+      active = {
+        text: stripped,
+        line: index + 1,
+        parenDepth
+      }
+      return
+    }
+
+    entries.push({
+      text: stripped,
+      line: index + 1
+    })
+  })
+
+  if (active) {
+    entries.push({
+      text: active.text,
+      line: active.line
+    })
+  }
+
+  return entries
+}
+
+function stripRubyComment(line: string): string {
+  let quote: '"' | "'" | undefined
+
+  for (let index = 0; index < line.length; index += 1) {
+    const current = line[index]
+    const previous = line[index - 1]
+
+    if ((current === '"' || current === "'") && previous !== '\\') {
+      quote = quote === current ? undefined : current
+      continue
+    }
+
+    if (!quote && current === '#') {
+      return line.slice(0, index)
+    }
+  }
+
+  return line
+}
+
+function parenDelta(line: string): number {
+  let quote: '"' | "'" | undefined
+  let delta = 0
+
+  for (let index = 0; index < line.length; index += 1) {
+    const current = line[index]
+    const previous = line[index - 1]
+
+    if ((current === '"' || current === "'") && previous !== '\\') {
+      quote = quote === current ? undefined : current
+      continue
+    }
+
+    if (quote) {
+      continue
+    }
+
+    if (current === '(') {
+      delta += 1
+    } else if (current === ')') {
+      delta -= 1
+    }
+  }
+
+  return delta
 }
 
 function isWorkflowOrActionFile(file: string): boolean {
