@@ -10,6 +10,8 @@ All notable changes to this project will be documented in this file.
   stable partial fingerprints for code scanning alerts.
 - Added warning diagnostics for invalid direct action inputs while preserving config/default
   fallback behavior.
+- Added a machine-readable JSON Schema for `.deterministic-deps.yml` with tests that keep schema
+  values aligned with parser expectations.
 
 ## 0.1.0
 

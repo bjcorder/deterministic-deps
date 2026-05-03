@@ -10,9 +10,9 @@ import {
   Severity
 } from './types'
 
-const VALID_SEVERITIES = ['low', 'medium', 'high'] as const
-const VALID_MODES = ['advisory', 'enforce'] as const
-const ECOSYSTEM_OPTIONS: Record<string, string[]> = {
+export const VALID_SEVERITIES = ['low', 'medium', 'high'] as const
+export const VALID_MODES = ['advisory', 'enforce'] as const
+export const ECOSYSTEM_OPTIONS: Record<string, string[]> = {
   go: ['requireGoSum'],
   jvm: ['allowDynamicVersionsWithGradleMetadata'],
   node: ['requireLockfile', 'allowVersionRangesWithLockfile'],

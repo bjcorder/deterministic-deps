@@ -2,6 +2,9 @@
 
 `deterministic-deps` reads `.deterministic-deps.yml` from the scan root by default. Valid action inputs override matching config values.
 
+A machine-readable JSON Schema is available at
+[`docs/deterministic-deps.schema.json`](deterministic-deps.schema.json) for editor validation.
+
 ```yaml
 mode: advisory
 severity-threshold: low
@@ -97,6 +100,29 @@ Accepted direct input values:
 | `severity-threshold`                  | `low`, `medium`, or `high`                  |
 | `sarif`, `patch`, `remote-validation` | `true` or `false`                           |
 | `remote-timeout-ms`, `remote-retries` | Non-negative integers such as `0` or `5000` |
+
+## Editor Schema Usage
+
+Editors that support YAML schemas can validate `.deterministic-deps.yml` as you type.
+
+To associate the schema from the file itself, add this comment at the top:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/bjcorder/deterministic-deps/main/docs/deterministic-deps.schema.json
+```
+
+For VS Code, you can also add a workspace setting:
+
+```json
+{
+  "yaml.schemas": {
+    "https://raw.githubusercontent.com/bjcorder/deterministic-deps/main/docs/deterministic-deps.schema.json": ".deterministic-deps.yml"
+  }
+}
+```
+
+The schema is for editor feedback and drift checks only. Runtime validation remains local to the
+action and continues to warn and fall back for invalid individual fields.
 
 ## Ecosystem Options
 

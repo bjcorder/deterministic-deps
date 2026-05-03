@@ -1,0 +1,196 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/bjcorder/deterministic-deps/main/docs/deterministic-deps.schema.json",
+  "title": "deterministic-deps configuration",
+  "description": "Configuration schema for .deterministic-deps.yml.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "mode": {
+      "description": "Reporting mode. Advisory reports findings without failing; enforce fails at or above the configured severity threshold.",
+      "enum": ["advisory", "enforce"]
+    },
+    "severity-threshold": {
+      "description": "Minimum severity that fails the action in enforce mode.",
+      "$ref": "#/$defs/severity"
+    },
+    "patch": {
+      "description": "Whether to write a unified diff with safe remediation suggestions.",
+      "type": "boolean"
+    },
+    "remote-validation": {
+      "description": "Whether to validate immutable GitHub commit refs through the GitHub API.",
+      "type": "boolean"
+    },
+    "remote-timeout-ms": {
+      "description": "Per-request timeout for remote validation in milliseconds.",
+      "$ref": "#/$defs/nonNegativeInteger"
+    },
+    "remote-retries": {
+      "description": "Retry count for transient remote validation failures.",
+      "$ref": "#/$defs/nonNegativeInteger"
+    },
+    "include": {
+      "description": "Glob patterns to scan.",
+      "$ref": "#/$defs/stringArray"
+    },
+    "exclude": {
+      "description": "Glob patterns to skip in addition to built-in vendor and build ignores.",
+      "$ref": "#/$defs/stringArray"
+    },
+    "rules": {
+      "description": "Map of rule id to enabled or disabled state.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "boolean"
+      }
+    },
+    "severity": {
+      "description": "Map of rule id to severity override.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/severity"
+      }
+    },
+    "allowlist": {
+      "description": "Finding suppressions by file glob, rule id, ecosystem, and optional line.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "minProperties": 1,
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "ruleId": {
+            "type": "string"
+          },
+          "ecosystem": {
+            "type": "string"
+          },
+          "line": {
+            "$ref": "#/$defs/positiveInteger"
+          }
+        }
+      }
+    },
+    "ecosystems": {
+      "description": "Ecosystem-specific policy options.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "go": {
+          "$ref": "#/$defs/goOptions"
+        },
+        "jvm": {
+          "$ref": "#/$defs/jvmOptions"
+        },
+        "node": {
+          "$ref": "#/$defs/nodeOptions"
+        },
+        "python": {
+          "$ref": "#/$defs/pythonOptions"
+        },
+        "ruby": {
+          "$ref": "#/$defs/rubyOptions"
+        },
+        "rust": {
+          "$ref": "#/$defs/rustOptions"
+        },
+        "terraform": {
+          "$ref": "#/$defs/terraformOptions"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "severity": {
+      "type": "string",
+      "enum": ["low", "medium", "high"]
+    },
+    "nonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "positiveInteger": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "stringArray": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "goOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requireGoSum": {
+          "type": "boolean"
+        }
+      }
+    },
+    "jvmOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowDynamicVersionsWithGradleMetadata": {
+          "type": "boolean"
+        }
+      }
+    },
+    "nodeOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requireLockfile": {
+          "type": "boolean"
+        },
+        "allowVersionRangesWithLockfile": {
+          "type": "boolean"
+        }
+      }
+    },
+    "pythonOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requireProjectLockfile": {
+          "type": "boolean"
+        },
+        "requireRequirementHashes": {
+          "type": "boolean"
+        }
+      }
+    },
+    "rubyOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requireLockfile": {
+          "type": "boolean"
+        }
+      }
+    },
+    "rustOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requireLockfile": {
+          "type": "boolean"
+        }
+      }
+    },
+    "terraformOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requireProviderLock": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}
