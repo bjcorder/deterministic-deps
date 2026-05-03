@@ -45258,12 +45258,88 @@ function checkRust(context) {
         ecosystemBoolean(context.config, 'rust', 'requireLockfile', true)) {
         findings.push(finding('rust/lockfile-required', 'rust', context.file, 1, 'high', 'Cargo.toml was found without Cargo.lock.', 'Commit Cargo.lock for applications and workspaces that need deterministic builds.'));
     }
-    context.lines.forEach((line, index) => {
-        if (line.includes('git =') && !/\brev\s*=\s*["'][a-f0-9]{40}["']/i.test(line)) {
-            findings.push(finding('rust/git-rev-sha', 'rust', context.file, index + 1, 'high', `Rust git dependency '${line.trim()}' does not pin a rev commit SHA.`, 'Add rev = "<40-character commit SHA>" to git dependencies.'));
+    for (const dependency of parseRustDependencyEntries(context.lines)) {
+        if (/\bgit\s*=/.test(dependency.text) &&
+            !/\brev\s*=\s*["'][a-f0-9]{40}["']/i.test(dependency.text)) {
+            findings.push(finding('rust/git-rev-sha', 'rust', context.file, dependency.line, 'high', `Rust git dependency '${dependency.text}' does not pin a rev commit SHA.`, 'Add rev = "<40-character commit SHA>" to git dependencies.'));
         }
-    });
+    }
     return findings;
+}
+function parseRustDependencyEntries(lines) {
+    const entries = [];
+    let section = '';
+    let active;
+    lines.forEach((line, index) => {
+        const stripped = stripTomlComment(line).trim();
+        if (!stripped) {
+            return;
+        }
+        const sectionMatch = stripped.match(/^\[([^\]]+)\]$/);
+        if (sectionMatch && !active) {
+            section = sectionMatch[1];
+            return;
+        }
+        if (active) {
+            active.text = `${active.text} ${stripped}`.replace(/\s+/g, ' ');
+            active.braceDepth += braceDelta(stripped);
+            if (active.braceDepth <= 0) {
+                entries.push({
+                    name: active.name,
+                    text: active.text,
+                    line: active.line
+                });
+                active = undefined;
+            }
+            return;
+        }
+        if (!isRustDependencySection(section)) {
+            return;
+        }
+        const assignment = stripped.match(/^([A-Za-z0-9_.-]+)\s*=\s*(.+)$/);
+        if (!assignment) {
+            return;
+        }
+        const text = stripped.replace(/\s+/g, ' ');
+        const depth = braceDelta(stripped);
+        if (depth > 0) {
+            active = {
+                name: assignment[1],
+                text,
+                line: index + 1,
+                braceDepth: depth
+            };
+            return;
+        }
+        entries.push({
+            name: assignment[1],
+            text,
+            line: index + 1
+        });
+    });
+    return entries;
+}
+function isRustDependencySection(section) {
+    return (section === 'dependencies' ||
+        section === 'dev-dependencies' ||
+        section === 'build-dependencies' ||
+        section === 'workspace.dependencies' ||
+        /^target\.[^.]+(?:\.[^.]+)*\.(?:dependencies|dev-dependencies|build-dependencies)$/.test(section));
+}
+function stripTomlComment(line) {
+    let quote;
+    for (let index = 0; index < line.length; index += 1) {
+        const current = line[index];
+        const previous = line[index - 1];
+        if ((current === '"' || current === "'") && previous !== '\\') {
+            quote = quote === current ? undefined : current;
+            continue;
+        }
+        if (!quote && current === '#') {
+            return line.slice(0, index);
+        }
+    }
+    return line;
 }
 function checkJvm(context) {
     if (!/(pom\.xml|build\.gradle|build\.gradle\.kts)$/.test(context.file)) {

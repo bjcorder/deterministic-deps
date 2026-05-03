@@ -1,0 +1,7 @@
+{
+  "ecosystems": {
+    "rust": {
+      "requireLockfile": false
+    }
+  }
+}

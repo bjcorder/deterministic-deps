@@ -61,6 +61,12 @@ interface GoDirective {
   line: number
 }
 
+interface RustDependencyEntry {
+  name: string
+  text: string
+  line: number
+}
+
 const handlers: RuleHandler[] = [
   checkGithubActions,
   checkDockerLikeFiles,
@@ -892,23 +898,127 @@ function checkRust(context: FileContext): Finding[] {
     )
   }
 
-  context.lines.forEach((line, index) => {
-    if (line.includes('git =') && !/\brev\s*=\s*["'][a-f0-9]{40}["']/i.test(line)) {
+  for (const dependency of parseRustDependencyEntries(context.lines)) {
+    if (
+      /\bgit\s*=/.test(dependency.text) &&
+      !/\brev\s*=\s*["'][a-f0-9]{40}["']/i.test(dependency.text)
+    ) {
       findings.push(
         finding(
           'rust/git-rev-sha',
           'rust',
           context.file,
-          index + 1,
+          dependency.line,
           'high',
-          `Rust git dependency '${line.trim()}' does not pin a rev commit SHA.`,
+          `Rust git dependency '${dependency.text}' does not pin a rev commit SHA.`,
           'Add rev = "<40-character commit SHA>" to git dependencies.'
         )
       )
     }
-  })
+  }
 
   return findings
+}
+
+function parseRustDependencyEntries(lines: string[]): RustDependencyEntry[] {
+  const entries: RustDependencyEntry[] = []
+  let section = ''
+  let active:
+    | {
+        name: string
+        text: string
+        line: number
+        braceDepth: number
+      }
+    | undefined
+
+  lines.forEach((line, index) => {
+    const stripped = stripTomlComment(line).trim()
+    if (!stripped) {
+      return
+    }
+
+    const sectionMatch = stripped.match(/^\[([^\]]+)\]$/)
+    if (sectionMatch && !active) {
+      section = sectionMatch[1]
+      return
+    }
+
+    if (active) {
+      active.text = `${active.text} ${stripped}`.replace(/\s+/g, ' ')
+      active.braceDepth += braceDelta(stripped)
+      if (active.braceDepth <= 0) {
+        entries.push({
+          name: active.name,
+          text: active.text,
+          line: active.line
+        })
+        active = undefined
+      }
+      return
+    }
+
+    if (!isRustDependencySection(section)) {
+      return
+    }
+
+    const assignment = stripped.match(/^([A-Za-z0-9_.-]+)\s*=\s*(.+)$/)
+    if (!assignment) {
+      return
+    }
+
+    const text = stripped.replace(/\s+/g, ' ')
+    const depth = braceDelta(stripped)
+    if (depth > 0) {
+      active = {
+        name: assignment[1],
+        text,
+        line: index + 1,
+        braceDepth: depth
+      }
+      return
+    }
+
+    entries.push({
+      name: assignment[1],
+      text,
+      line: index + 1
+    })
+  })
+
+  return entries
+}
+
+function isRustDependencySection(section: string): boolean {
+  return (
+    section === 'dependencies' ||
+    section === 'dev-dependencies' ||
+    section === 'build-dependencies' ||
+    section === 'workspace.dependencies' ||
+    /^target\.[^.]+(?:\.[^.]+)*\.(?:dependencies|dev-dependencies|build-dependencies)$/.test(
+      section
+    )
+  )
+}
+
+function stripTomlComment(line: string): string {
+  let quote: '"' | "'" | undefined
+
+  for (let index = 0; index < line.length; index += 1) {
+    const current = line[index]
+    const previous = line[index - 1]
+
+    if ((current === '"' || current === "'") && previous !== '\\') {
+      quote = quote === current ? undefined : current
+      continue
+    }
+
+    if (!quote && current === '#') {
+      return line.slice(0, index)
+    }
+  }
+
+  return line
 }
 
 function checkJvm(context: FileContext): Finding[] {

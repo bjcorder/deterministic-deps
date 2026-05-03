@@ -53,7 +53,7 @@ Local `./` and `../` actions are allowed.
 | Rule                     | Severity | Behavior                                                                           |
 | ------------------------ | -------- | ---------------------------------------------------------------------------------- |
 | `rust/lockfile-required` | high     | `Cargo.toml` requires `Cargo.lock` for deterministic application/workspace builds. |
-| `rust/git-rev-sha`       | high     | Git dependencies must include `rev = "<40-character commit SHA>"`.                 |
+| `rust/git-rev-sha`       | high     | Git dependencies in dependency tables must include `rev = "<40-character commit SHA>"`. |
 
 ## JVM
 
