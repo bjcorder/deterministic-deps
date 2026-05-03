@@ -39,6 +39,8 @@ ecosystems:
     requireProviderLock: true
   go:
     requireGoSum: true
+  jvm:
+    allowDynamicVersionsWithGradleMetadata: true
   rust:
     requireLockfile: true
   ruby:
@@ -74,13 +76,14 @@ Examples that warn and fall back:
 
 ## Ecosystem Options
 
-| Option                                           | Default | Description                                                                                                                  |
-| ------------------------------------------------ | ------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `ecosystems.node.requireLockfile`                | `true`  | Require npm, Yarn, or pnpm lockfiles when `package.json` declares dependencies.                                              |
-| `ecosystems.node.allowVersionRangesWithLockfile` | `false` | Allow registry version ranges such as `^1.2.3` only when npm, Yarn, or pnpm lockfile coverage with integrity metadata is committed. Git and URL specs still require immutable refs. |
-| `ecosystems.python.requireProjectLockfile`       | `true`  | Require `poetry.lock`, `uv.lock`, or `Pipfile.lock` for Python project files.                                                |
-| `ecosystems.python.requireRequirementHashes`     | `true`  | Require logical `requirements*.txt` entries to use exact pins with `--hash=` values. Line continuations are evaluated as one entry. |
-| `ecosystems.terraform.requireProviderLock`       | `true`  | Require exact provider versions or `.terraform.lock.hcl` for provider constraints.                                           |
-| `ecosystems.go.requireGoSum`                     | `true`  | Require `go.sum` next to `go.mod`.                                                                                           |
-| `ecosystems.rust.requireLockfile`                | `true`  | Require `Cargo.lock` next to `Cargo.toml`.                                                                                   |
-| `ecosystems.ruby.requireLockfile`                | `true`  | Require `Gemfile.lock` next to `Gemfile`.                                                                                    |
+| Option                                                  | Default | Description                                                                                                                                                                         |
+| ------------------------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ecosystems.node.requireLockfile`                       | `true`  | Require npm, Yarn, or pnpm lockfiles when `package.json` declares dependencies.                                                                                                     |
+| `ecosystems.node.allowVersionRangesWithLockfile`        | `false` | Allow registry version ranges such as `^1.2.3` only when npm, Yarn, or pnpm lockfile coverage with integrity metadata is committed. Git and URL specs still require immutable refs. |
+| `ecosystems.python.requireProjectLockfile`              | `true`  | Require `poetry.lock`, `uv.lock`, or `Pipfile.lock` for Python project files.                                                                                                       |
+| `ecosystems.python.requireRequirementHashes`            | `true`  | Require logical `requirements*.txt` entries to use exact pins with `--hash=` values. Line continuations are evaluated as one entry.                                                 |
+| `ecosystems.terraform.requireProviderLock`              | `true`  | Require exact provider versions or `.terraform.lock.hcl` for provider constraints.                                                                                                  |
+| `ecosystems.go.requireGoSum`                            | `true`  | Require `go.sum` next to `go.mod`.                                                                                                                                                  |
+| `ecosystems.jvm.allowDynamicVersionsWithGradleMetadata` | `true`  | Allow Gradle dynamic versions when `gradle.lockfile`, `gradle/dependency-locks/`, or `gradle/verification-metadata.xml` is committed in the project path.                           |
+| `ecosystems.rust.requireLockfile`                       | `true`  | Require `Cargo.lock` next to `Cargo.toml`.                                                                                                                                          |
+| `ecosystems.ruby.requireLockfile`                       | `true`  | Require `Gemfile.lock` next to `Gemfile`.                                                                                                                                           |

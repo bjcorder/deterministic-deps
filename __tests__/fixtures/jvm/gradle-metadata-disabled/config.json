@@ -1,0 +1,7 @@
+{
+  "ecosystems": {
+    "jvm": {
+      "allowDynamicVersionsWithGradleMetadata": false
+    }
+  }
+}

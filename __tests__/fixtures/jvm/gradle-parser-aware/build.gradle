@@ -1,0 +1,12 @@
+dependencies {
+  // implementation 'com.example:commented:+'
+  implementation 'com.example:plus:+'
+  api("com.example:latest:latest.release")
+  compileOnly group: 'com.example', name: 'mapped', version: '1.+'
+}
+
+plugins {
+  id 'com.example.plugin' version '2.0-SNAPSHOT'
+}
+
+def unrelated = 'com.example:ignored:+'

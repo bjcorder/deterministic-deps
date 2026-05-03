@@ -30,40 +30,40 @@ Local `./` and `../` actions are allowed.
 | Rule                          | Severity | Behavior                                                                                                                            |
 | ----------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `node/lockfile-required`      | high     | `package.json` dependencies require a package manager lockfile.                                                                     |
-| `node/lockfile-coverage`      | medium   | Registry dependencies require npm, Yarn, or pnpm lockfile entries with integrity metadata.                                           |
+| `node/lockfile-coverage`      | medium   | Registry dependencies require npm, Yarn, or pnpm lockfile entries with integrity metadata.                                          |
 | `node/non-deterministic-spec` | medium   | Ranges, tags, branch refs, and unpinned git specs are flagged. Exact semver, workspace/file links, and git commit SHAs are allowed. |
 
 ## Python
 
-| Rule                             | Severity | Behavior                                                                            |
-| -------------------------------- | -------- | ----------------------------------------------------------------------------------- |
-| `python/hash-pinned-requirement` | medium   | `requirements*.txt` entries should use exact `==` pins with `--hash=` entries.      |
+| Rule                             | Severity | Behavior                                                                                 |
+| -------------------------------- | -------- | ---------------------------------------------------------------------------------------- |
+| `python/hash-pinned-requirement` | medium   | `requirements*.txt` entries should use exact `==` pins with `--hash=` entries.           |
 | `python/git-sha`                 | high     | Git dependencies in requirements, `pyproject.toml`, and `Pipfile` must pin a commit SHA. |
-| `python/lockfile-required`       | high     | `pyproject.toml` and `Pipfile` require `poetry.lock`, `uv.lock`, or `Pipfile.lock`. |
+| `python/lockfile-required`       | high     | `pyproject.toml` and `Pipfile` require `poetry.lock`, `uv.lock`, or `Pipfile.lock`.      |
 
 ## Go
 
-| Rule                 | Severity | Behavior                                        |
-| -------------------- | -------- | ----------------------------------------------- |
-| `go/sum-required`    | high     | `go.mod` requires `go.sum`.                     |
+| Rule                 | Severity | Behavior                                                                         |
+| -------------------- | -------- | -------------------------------------------------------------------------------- |
+| `go/sum-required`    | high     | `go.mod` requires `go.sum`.                                                      |
 | `go/git-replace-sha` | medium   | Git-like `replace` directives must use immutable pseudo-versions or commit refs. |
 
 ## Rust
 
-| Rule                     | Severity | Behavior                                                                           |
-| ------------------------ | -------- | ---------------------------------------------------------------------------------- |
-| `rust/lockfile-required` | high     | `Cargo.toml` requires `Cargo.lock` for deterministic application/workspace builds. |
+| Rule                     | Severity | Behavior                                                                                |
+| ------------------------ | -------- | --------------------------------------------------------------------------------------- |
+| `rust/lockfile-required` | high     | `Cargo.toml` requires `Cargo.lock` for deterministic application/workspace builds.      |
 | `rust/git-rev-sha`       | high     | Git dependencies in dependency tables must include `rev = "<40-character commit SHA>"`. |
 
 ## JVM
 
-| Rule                  | Severity | Behavior                                                                              |
-| --------------------- | -------- | ------------------------------------------------------------------------------------- |
-| `jvm/dynamic-version` | medium   | Maven and Gradle declarations reject `SNAPSHOT`, `latest.*`, `+`, and range versions. |
+| Rule                  | Severity | Behavior                                                                                                                                                                                                                                                                        |
+| --------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `jvm/dynamic-version` | medium   | Maven dependency, parent, plugin, and version-property declarations reject `SNAPSHOT`, `latest.*`, `+`, and range versions. Gradle Groovy/Kotlin dependency and plugin declarations are parser-aware and may be satisfied by committed Gradle locking or verification metadata. |
 
 ## Ruby
 
-| Rule                     | Severity | Behavior                                                      |
-| ------------------------ | -------- | ------------------------------------------------------------- |
-| `ruby/lockfile-required` | high     | `Gemfile` requires `Gemfile.lock`.                            |
+| Rule                     | Severity | Behavior                                                              |
+| ------------------------ | -------- | --------------------------------------------------------------------- |
+| `ruby/lockfile-required` | high     | `Gemfile` requires `Gemfile.lock`.                                    |
 | `ruby/git-ref-sha`       | high     | Gemfile git dependencies must use `ref: "<40-character commit SHA>"`. |

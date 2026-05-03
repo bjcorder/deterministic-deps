@@ -72,6 +72,13 @@ interface RubyGemEntry {
   line: number
 }
 
+interface JvmVersionEntry {
+  source: 'maven' | 'gradle'
+  text: string
+  version: string
+  line: number
+}
+
 const handlers: RuleHandler[] = [
   checkGithubActions,
   checkDockerLikeFiles,
@@ -615,7 +622,9 @@ function parsePyprojectDependencyEntries(lines: string[]): PythonDependencyEntry
     if (multilineArray) {
       multilineArray.text += ` ${trimmed}`
       if (trimmed.includes(']')) {
-        entries.push(...pythonArrayEntries(multilineArray.text, multilineArray.source, multilineArray.line))
+        entries.push(
+          ...pythonArrayEntries(multilineArray.text, multilineArray.source, multilineArray.line)
+        )
         multilineArray = undefined
       }
       return
@@ -623,7 +632,10 @@ function parsePyprojectDependencyEntries(lines: string[]): PythonDependencyEntry
 
     if (section === 'project' || section.startsWith('project.optional-dependencies')) {
       const arrayMatch = trimmed.match(/^([A-Za-z0-9_.-]+)\s*=\s*(\[.*)$/)
-      if (arrayMatch && (arrayMatch[1] === 'dependencies' || section.includes('optional-dependencies'))) {
+      if (
+        arrayMatch &&
+        (arrayMatch[1] === 'dependencies' || section.includes('optional-dependencies'))
+      ) {
         if (arrayMatch[2].includes(']')) {
           entries.push(...pythonArrayEntries(arrayMatch[2], section, index + 1))
         } else {
@@ -842,7 +854,9 @@ function parseGoModDirectives(lines: string[]): GoDirective[] {
       return
     }
 
-    const directiveMatch = stripped.match(/^(module|go|toolchain|require|replace|exclude|retract)\b(.*)$/)
+    const directiveMatch = stripped.match(
+      /^(module|go|toolchain|require|replace|exclude|retract)\b(.*)$/
+    )
     if (directiveMatch) {
       directives.push({
         keyword: directiveMatch[1],
@@ -1031,26 +1045,310 @@ function checkJvm(context: FileContext): Finding[] {
     return []
   }
 
-  const findings: Finding[] = []
-  context.lines.forEach((line, index) => {
-    if (
-      /\bSNAPSHOT\b|latest\.[\w-]+|['"][^'"]*\+['"]|\[[^\]]*,[^\]]*\]|\([^)]+,[^)]+\)/i.test(line)
-    ) {
-      findings.push(
-        finding(
-          'jvm/dynamic-version',
-          'jvm',
-          context.file,
-          index + 1,
-          'medium',
-          `JVM dependency declaration '${line.trim()}' appears dynamic.`,
-          'Use fixed release versions and dependency verification or lockfiles where supported.'
-        )
-      )
-    }
-  })
+  const entries = context.file.endsWith('pom.xml')
+    ? parseMavenDynamicVersionEntries(context)
+    : parseGradleDynamicVersionEntries(context)
+  const gradleMetadataSatisfiesPolicy =
+    !context.file.endsWith('pom.xml') &&
+    ecosystemBoolean(context.config, 'jvm', 'allowDynamicVersionsWithGradleMetadata', true) &&
+    hasGradleLockOrVerificationMetadata(context)
 
-  return findings
+  if (gradleMetadataSatisfiesPolicy) {
+    return []
+  }
+
+  return entries.map((entry) =>
+    finding(
+      'jvm/dynamic-version',
+      'jvm',
+      context.file,
+      entry.line,
+      'medium',
+      `${entry.source === 'maven' ? 'Maven' : 'Gradle'} version declaration '${entry.text}' resolves to dynamic version '${entry.version}'.`,
+      entry.source === 'gradle'
+        ? 'Use fixed release versions or commit Gradle dependency locking or verification metadata.'
+        : 'Use fixed release versions for Maven dependency, parent, plugin, and version-property declarations.'
+    )
+  )
+}
+
+function parseMavenDynamicVersionEntries(context: FileContext): JvmVersionEntry[] {
+  const content = stripXmlComments(context.content)
+  const propertyReferences = new Set<string>()
+  const entries: JvmVersionEntry[] = []
+
+  for (const block of matchXmlBlocks(content, ['dependency', 'parent', 'plugin'])) {
+    for (const versionTag of matchXmlChildText(block.text, 'version')) {
+      const version = normalizeXmlText(versionTag.value)
+      collectMavenPropertyReferences(version).forEach((property) =>
+        propertyReferences.add(property)
+      )
+      if (isJvmDynamicVersion(version)) {
+        entries.push({
+          source: 'maven',
+          text: versionTag.text,
+          version,
+          line: lineNumberAt(content, block.index + versionTag.index)
+        })
+      }
+    }
+  }
+
+  for (const propertiesBlock of matchXmlBlocks(content, ['properties'])) {
+    const bodyStart = propertiesBlock.text.indexOf('>') + 1
+    const body = propertiesBlock.text.slice(bodyStart, propertiesBlock.text.lastIndexOf('</'))
+    for (const property of matchXmlProperties(body)) {
+      const version = normalizeXmlText(property.value)
+      if (propertyReferences.has(property.name) && isJvmDynamicVersion(version)) {
+        entries.push({
+          source: 'maven',
+          text: property.text,
+          version,
+          line: lineNumberAt(content, propertiesBlock.index + bodyStart + property.index)
+        })
+      }
+    }
+  }
+
+  return dedupeJvmEntries(entries)
+}
+
+function parseGradleDynamicVersionEntries(context: FileContext): JvmVersionEntry[] {
+  return stripGradleComments(context.content)
+    .split(/\r?\n/)
+    .flatMap((line, index) => parseGradleLineVersions(line, index + 1))
+    .filter((entry) => isJvmDynamicVersion(entry.version))
+}
+
+function parseGradleLineVersions(line: string, lineNumber: number): JvmVersionEntry[] {
+  const trimmed = line.trim()
+  if (!isGradleDependencyOrPluginDeclaration(trimmed)) {
+    return []
+  }
+
+  const entries: JvmVersionEntry[] = []
+  const quotedValues = Array.from(trimmed.matchAll(/['"]([^'"]+)['"]/g), (match) => match[1])
+  for (const value of quotedValues) {
+    const version = extractGradleCoordinateVersion(value)
+    if (version) {
+      entries.push({
+        source: 'gradle',
+        text: trimmed,
+        version,
+        line: lineNumber
+      })
+    }
+  }
+
+  for (const match of trimmed.matchAll(/\bversion\s*[:=]\s*['"]([^'"]+)['"]/g)) {
+    entries.push({
+      source: 'gradle',
+      text: trimmed,
+      version: match[1],
+      line: lineNumber
+    })
+  }
+
+  const pluginVersion = /\bversion\s+['"]([^'"]+)['"]/.exec(trimmed)?.[1]
+  if (pluginVersion) {
+    entries.push({
+      source: 'gradle',
+      text: trimmed,
+      version: pluginVersion,
+      line: lineNumber
+    })
+  }
+
+  return dedupeJvmEntries(entries)
+}
+
+function isGradleDependencyOrPluginDeclaration(line: string): boolean {
+  return (
+    /^(api|annotationProcessor|classpath|compile|compileOnly|debugImplementation|detachedConfiguration|implementation|kapt|ksp|runtime|runtimeOnly|testAnnotationProcessor|testCompile|testImplementation|testRuntime|testRuntimeOnly)\b/.test(
+      line
+    ) ||
+    /^(add|constraints|enforcedPlatform|platform)\s*\(/.test(line) ||
+    /^id\s*(?:\(|['"])/.test(line)
+  )
+}
+
+function extractGradleCoordinateVersion(value: string): string | undefined {
+  const parts = value.split(':')
+  if (parts.length < 3) {
+    return undefined
+  }
+
+  return parts[parts.length - 1]
+}
+
+function isJvmDynamicVersion(version: string): boolean {
+  const trimmed = version.trim()
+  return (
+    /\bSNAPSHOT\b/i.test(trimmed) ||
+    /^latest(?:[.-][\w-]+)?$/i.test(trimmed) ||
+    /\+$/.test(trimmed) ||
+    /^[[(][^,]*,[^\])]*[\])]$/.test(trimmed)
+  )
+}
+
+function stripXmlComments(content: string): string {
+  return content.replace(/<!--[\s\S]*?-->/g, (comment) => comment.replace(/[^\r\n]/g, ' '))
+}
+
+function matchXmlBlocks(content: string, names: string[]): Array<{ text: string; index: number }> {
+  return names.flatMap((name) =>
+    Array.from(
+      content.matchAll(new RegExp(`<${name}\\b[^>]*>[\\s\\S]*?<\\/${name}>`, 'gi')),
+      (match) => ({
+        text: match[0],
+        index: match.index ?? 0
+      })
+    )
+  )
+}
+
+function matchXmlChildText(
+  content: string,
+  name: string
+): Array<{ text: string; value: string; index: number }> {
+  return Array.from(
+    content.matchAll(new RegExp(`<${name}\\b[^>]*>([\\s\\S]*?)<\\/${name}>`, 'gi')),
+    (match) => ({
+      text: match[0].trim(),
+      value: match[1],
+      index: match.index ?? 0
+    })
+  )
+}
+
+function matchXmlProperties(content: string): Array<{
+  name: string
+  text: string
+  value: string
+  index: number
+}> {
+  return Array.from(content.matchAll(/<([A-Za-z0-9_.-]+)\b[^>]*>([\s\S]*?)<\/\1>/g), (match) => ({
+    name: match[1],
+    text: match[0].trim(),
+    value: match[2],
+    index: match.index ?? 0
+  }))
+}
+
+function normalizeXmlText(value: string): string {
+  return value.replace(/\s+/g, ' ').trim()
+}
+
+function collectMavenPropertyReferences(value: string): string[] {
+  return Array.from(value.matchAll(/\$\{([^}]+)\}/g), (match) => match[1])
+}
+
+function stripGradleComments(content: string): string {
+  let result = ''
+  let quote: '"' | "'" | undefined
+  let lineComment = false
+  let blockComment = false
+
+  for (let index = 0; index < content.length; index += 1) {
+    const current = content[index]
+    const next = content[index + 1]
+    const previous = content[index - 1]
+
+    if (lineComment) {
+      if (current === '\n' || current === '\r') {
+        lineComment = false
+        result += current
+      } else {
+        result += ' '
+      }
+      continue
+    }
+
+    if (blockComment) {
+      if (current === '*' && next === '/') {
+        result += '  '
+        blockComment = false
+        index += 1
+      } else {
+        result += current === '\n' || current === '\r' ? current : ' '
+      }
+      continue
+    }
+
+    if (!quote && current === '/' && next === '/') {
+      result += '  '
+      lineComment = true
+      index += 1
+      continue
+    }
+
+    if (!quote && current === '/' && next === '*') {
+      result += '  '
+      blockComment = true
+      index += 1
+      continue
+    }
+
+    if ((current === '"' || current === "'") && previous !== '\\') {
+      quote = quote === current ? undefined : current
+    }
+
+    result += current
+  }
+
+  return result
+}
+
+function hasGradleLockOrVerificationMetadata(context: FileContext): boolean {
+  let current = path.dirname(context.absolutePath)
+  const root = path.resolve(context.root)
+
+  while (isPathWithinOrEqual(root, current)) {
+    if (
+      fs.existsSync(path.join(current, 'gradle.lockfile')) ||
+      fs.existsSync(path.join(current, 'gradle', 'verification-metadata.xml')) ||
+      directoryHasFiles(path.join(current, 'gradle', 'dependency-locks'))
+    ) {
+      return true
+    }
+
+    const parent = path.dirname(current)
+    if (parent === current) {
+      break
+    }
+    current = parent
+  }
+
+  return false
+}
+
+function directoryHasFiles(directory: string): boolean {
+  try {
+    return fs.existsSync(directory) && fs.readdirSync(directory).length > 0
+  } catch {
+    return false
+  }
+}
+
+function isPathWithinOrEqual(parent: string, child: string): boolean {
+  const relative = path.relative(parent, child)
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
+}
+
+function lineNumberAt(content: string, index: number): number {
+  return content.slice(0, index).split(/\r?\n/).length
+}
+
+function dedupeJvmEntries(entries: JvmVersionEntry[]): JvmVersionEntry[] {
+  const seen = new Set<string>()
+  return entries.filter((entry) => {
+    const key = `${entry.line}:${entry.version}:${entry.text}`
+    if (seen.has(key)) {
+      return false
+    }
+    seen.add(key)
+    return true
+  })
 }
 
 function checkRuby(context: FileContext): Finding[] {

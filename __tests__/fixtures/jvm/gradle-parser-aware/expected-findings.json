@@ -1,0 +1,51 @@
+[
+  {
+    "ruleId": "jvm/dynamic-version",
+    "ecosystem": "jvm",
+    "file": "build.gradle",
+    "line": 3,
+    "severity": "medium"
+  },
+  {
+    "ruleId": "jvm/dynamic-version",
+    "ecosystem": "jvm",
+    "file": "build.gradle",
+    "line": 4,
+    "severity": "medium"
+  },
+  {
+    "ruleId": "jvm/dynamic-version",
+    "ecosystem": "jvm",
+    "file": "build.gradle",
+    "line": 5,
+    "severity": "medium"
+  },
+  {
+    "ruleId": "jvm/dynamic-version",
+    "ecosystem": "jvm",
+    "file": "build.gradle",
+    "line": 9,
+    "severity": "medium"
+  },
+  {
+    "ruleId": "jvm/dynamic-version",
+    "ecosystem": "jvm",
+    "file": "build.gradle.kts",
+    "line": 3,
+    "severity": "medium"
+  },
+  {
+    "ruleId": "jvm/dynamic-version",
+    "ecosystem": "jvm",
+    "file": "build.gradle.kts",
+    "line": 4,
+    "severity": "medium"
+  },
+  {
+    "ruleId": "jvm/dynamic-version",
+    "ecosystem": "jvm",
+    "file": "build.gradle.kts",
+    "line": 8,
+    "severity": "medium"
+  }
+]

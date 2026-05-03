@@ -24,6 +24,10 @@ Rust manifests are parsed by dependency table, including package, workspace, bui
 
 Gemfiles are parsed as logical `gem` declarations, including grouped and multi-line declarations. Comments and unrelated strings are ignored, and git dependencies must use a full `ref` commit SHA rather than branch or tag options alone.
 
+Maven `pom.xml` files are parsed for dependency, dependency management, parent, plugin, profile-scoped dependency, and referenced version-property declarations. XML comments and unrelated XML text are ignored. Maven wrapper distribution checksum metadata such as `.mvn/wrapper/maven-wrapper.properties` with `distributionSha256Sum` hardens the wrapper download, but it is not treated as dependency lock coverage for dynamic Maven versions.
+
+Gradle Groovy and Kotlin build files are parsed for common dependency and plugin declarations while ignoring line comments, block comments, and unrelated strings. Dynamic Gradle versions are accepted when `gradle.lockfile`, files under `gradle/dependency-locks/`, or `gradle/verification-metadata.xml` are committed in the build file's project path. Set `ecosystems.jvm.allowDynamicVersionsWithGradleMetadata: false` to require fixed Gradle versions even when that metadata exists.
+
 ## Policy Options
 
 Projects can tune lockfile and hash requirements with the `ecosystems` config block. This is intended for cases like library repositories that intentionally do not commit application lockfiles, or repositories that accept registry version ranges when a package manager lockfile is present.
@@ -33,6 +37,6 @@ Projects can tune lockfile and hash requirements with the `ecosystems` config bl
 - The scanner intentionally avoids network calls.
 - It does not parse every legal grammar branch for every package manager.
 - It may flag library repositories that intentionally omit lockfiles. Use `allowlist` or rule configuration for those cases.
-- It treats Maven and Gradle dynamic versions as non-deterministic but does not yet require a specific verification metadata format.
+- Maven property resolution is limited to properties referenced directly from parsed version tags.
 
 These limits keep v1 predictable while leaving room for deeper ecosystem-specific parsers later.
