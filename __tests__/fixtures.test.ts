@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { renderMarkdown, renderPatch, renderSarif, writeReports } from '../src/report'
+import { rules } from '../src/rules'
 import { scan } from '../src/scanner'
 import { Config, Finding } from '../src/types'
 
@@ -107,6 +108,26 @@ describe('fixture matrix', () => {
     ).sort()
 
     expect(coveredRuleIds).toEqual(documentedRuleIds())
+  })
+
+  it('has registry metadata for every documented rule id', () => {
+    const registryRuleIds = rules.map((rule) => rule.id).sort()
+
+    expect(registryRuleIds).toEqual(documentedRuleIds())
+    expect(rules).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: expect.any(String),
+          ecosystem: expect.any(String),
+          defaultSeverity: expect.stringMatching(/^(low|medium|high)$/),
+          description: expect.any(String),
+          evaluate: expect.any(Function)
+        })
+      ])
+    )
+    expect(rules.every((rule) => rule.description.length > 0)).toBe(true)
+    expect(rules.every((rule) => /^(low|medium|high)$/.test(rule.defaultSeverity))).toBe(true)
+    expect(rules.every((rule) => typeof rule.evaluate === 'function')).toBe(true)
   })
 
   it('includes at least one deterministic pass fixture for each ecosystem', () => {

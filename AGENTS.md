@@ -14,7 +14,7 @@ The action is advisory by default and can be configured to fail CI in enforce mo
 - `src/`: TypeScript source.
   - `main.ts`: Action entrypoint and GitHub Actions I/O.
   - `scanner.ts`: File discovery and scan orchestration.
-  - `rules.ts`: Rule evaluation.
+  - `rules/`: Rule registry, metadata, and rule evaluation.
   - `config.ts`: Config loading and validation.
   - `report.ts`: Markdown and SARIF report rendering.
   - `types.ts`: Shared public/internal types.
