@@ -10,20 +10,47 @@
           "rules": [
             {
               "id": "github-actions/sha-pin",
+              "name": "github-actions/sha-pin",
               "shortDescription": {
-                "text": "github-actions/sha-pin"
+                "text": "External GitHub Actions references must use full commit SHA refs."
+              },
+              "fullDescription": {
+                "text": "External GitHub Actions references must use full commit SHA refs."
+              },
+              "helpUri": "https://github.com/bjcorder/deterministic-deps/blob/main/docs/rules.md#github-actions",
+              "properties": {
+                "ecosystem": "github-actions",
+                "defaultSeverity": "high"
               }
             },
             {
               "id": "containers/image-digest",
+              "name": "containers/image-digest",
               "shortDescription": {
-                "text": "containers/image-digest"
+                "text": "Container image references should include immutable sha256 digests."
+              },
+              "fullDescription": {
+                "text": "Container image references should include immutable sha256 digests."
+              },
+              "helpUri": "https://github.com/bjcorder/deterministic-deps/blob/main/docs/rules.md#containers",
+              "properties": {
+                "ecosystem": "containers",
+                "defaultSeverity": "medium"
               }
             },
             {
               "id": "rust/git-rev-sha",
+              "name": "rust/git-rev-sha",
               "shortDescription": {
-                "text": "rust/git-rev-sha"
+                "text": "Rust git dependencies must include full rev commit SHAs."
+              },
+              "fullDescription": {
+                "text": "Rust git dependencies must include full rev commit SHAs."
+              },
+              "helpUri": "https://github.com/bjcorder/deterministic-deps/blob/main/docs/rules.md#rust",
+              "properties": {
+                "ecosystem": "rust",
+                "defaultSeverity": "high"
               }
             }
           ]
@@ -48,6 +75,9 @@
               }
             }
           ],
+          "partialFingerprints": {
+            "primaryLocationLineHash": "ee0fd4d00252496114f1bca50383610da0db85055ee0ceb5e988491cd5df4c7c"
+          },
           "properties": {
             "ecosystem": "github-actions",
             "severity": "high"
@@ -71,6 +101,9 @@
               }
             }
           ],
+          "partialFingerprints": {
+            "primaryLocationLineHash": "539aa79beb5674f413848592cd4d06c2dbd960450c30dcafaf7db67ebda74f50"
+          },
           "properties": {
             "ecosystem": "containers",
             "severity": "medium"
@@ -94,6 +127,9 @@
               }
             }
           ],
+          "partialFingerprints": {
+            "primaryLocationLineHash": "045460280af3855b2fbff71e5bc4c8194fb3c110bfcac40d67432198abedd409"
+          },
           "properties": {
             "ecosystem": "rust",
             "severity": "high"

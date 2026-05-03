@@ -1,6 +1,10 @@
 import fs from 'node:fs'
+import crypto from 'node:crypto'
 import path from 'node:path'
 import { Finding, LineReplacement, ReportResult, Severity } from './types'
+import { Rule, rules as ruleRegistry } from './rules'
+
+const RULES_HELP_URI = 'https://github.com/bjcorder/deterministic-deps/blob/main/docs/rules.md'
 
 export function countBySeverity(findings: Finding[]): Record<Severity, number> {
   return {
@@ -87,12 +91,9 @@ export function renderMarkdown(findings: Finding[]): string {
 }
 
 export function renderSarif(findings: Finding[]): object {
-  const rules = Array.from(new Set(findings.map((finding) => finding.ruleId))).map((ruleId) => ({
-    id: ruleId,
-    shortDescription: {
-      text: ruleId
-    }
-  }))
+  const rules = Array.from(new Set(findings.map((finding) => finding.ruleId))).map(
+    sarifRuleMetadata
+  )
 
   return {
     version: '2.1.0',
@@ -125,6 +126,7 @@ export function renderSarif(findings: Finding[]): object {
                 }
               }
             ],
+            partialFingerprints: sarifFingerprints(finding),
             properties: {
               ecosystem: finding.ecosystem,
               severity: finding.severity
@@ -165,6 +167,67 @@ export function renderSarif(findings: Finding[]): object {
       }
     ]
   }
+}
+
+function sarifRuleMetadata(ruleId: string): object {
+  const rule = ruleRegistry.find((candidate) => candidate.id === ruleId)
+  const description = rule?.description ?? ruleId
+
+  return {
+    id: ruleId,
+    name: ruleId,
+    shortDescription: {
+      text: description
+    },
+    fullDescription: {
+      text: description
+    },
+    helpUri: rule ? ruleHelpUri(rule) : RULES_HELP_URI,
+    properties: {
+      ecosystem: rule?.ecosystem,
+      defaultSeverity: rule?.defaultSeverity
+    }
+  }
+}
+
+function ruleHelpUri(rule: Rule): string {
+  return `${RULES_HELP_URI}#${ruleDocsAnchor(rule.ecosystem)}`
+}
+
+function ruleDocsAnchor(ecosystem: string): string {
+  const anchors: Record<string, string> = {
+    'github-actions': 'github-actions',
+    containers: 'containers',
+    terraform: 'terraform-and-opentofu',
+    node: 'nodejs',
+    python: 'python',
+    go: 'go',
+    rust: 'rust',
+    jvm: 'jvm',
+    ruby: 'ruby',
+    remote: 'remote-validation'
+  }
+
+  return anchors[ecosystem] ?? ecosystem.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+}
+
+function sarifFingerprints(finding: Finding): Record<string, string> {
+  return {
+    primaryLocationLineHash: stableHash(
+      [
+        'deterministic-deps',
+        'v1',
+        finding.ruleId,
+        finding.file,
+        finding.line.toString(),
+        finding.message
+      ].join('\0')
+    )
+  }
+}
+
+function stableHash(value: string): string {
+  return crypto.createHash('sha256').update(value).digest('hex')
 }
 
 export function renderPatch(root: string, findings: Finding[]): string {
