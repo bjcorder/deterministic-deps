@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+- Added a manual `v1 tag smoke` workflow and release documentation for validating semantic version
+  tags before moving the floating `v1` tag.
+
 ## 0.1.0
 
 - Initial TypeScript GitHub Action implementation.

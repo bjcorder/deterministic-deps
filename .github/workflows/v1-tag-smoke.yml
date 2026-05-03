@@ -1,0 +1,134 @@
+name: v1 tag smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      action-ref:
+        description: Semantic version tag to smoke test before moving v1, for example v1.0.0.
+        required: true
+        default: v1.0.0
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out candidate action
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          repository: bjcorder/deterministic-deps
+          ref: ${{ inputs.action-ref }}
+          path: candidate-action
+
+      - name: Prepare smoke fixtures
+        run: |
+          mkdir -p smoke/advisory smoke/enforce smoke/patch smoke/sarif-disabled
+
+          cat > smoke/advisory/package.json <<'JSON'
+          {
+            "name": "advisory-smoke",
+            "version": "1.0.0",
+            "dependencies": {
+              "left-pad": "^1.3.0"
+            }
+          }
+          JSON
+
+          cat > smoke/enforce/package.json <<'JSON'
+          {
+            "name": "enforce-smoke",
+            "version": "1.0.0",
+            "dependencies": {
+              "left-pad": "^1.3.0"
+            }
+          }
+          JSON
+
+          cat > smoke/patch/Cargo.toml <<'TOML'
+          [package]
+          name = "patch-smoke"
+          version = "0.1.0"
+          edition = "2021"
+
+          [dependencies]
+          demo = { git = "https://github.com/example/demo" }
+          TOML
+          touch smoke/patch/Cargo.lock
+
+          cat > smoke/sarif-disabled/README.md <<'MD'
+          # SARIF disabled smoke
+          MD
+
+      - name: Advisory smoke
+        id: advisory
+        uses: ./candidate-action
+        with:
+          path: smoke/advisory
+
+      - name: Validate advisory outputs
+        run: |
+          test "${{ steps.advisory.outputs.finding-count }}" = "2"
+          test "${{ steps.advisory.outputs.high-count }}" = "1"
+          test "${{ steps.advisory.outputs.medium-count }}" = "1"
+          test "${{ steps.advisory.outputs.low-count }}" = "0"
+          test -f "${{ steps.advisory.outputs.report-path }}"
+          test -f "${{ steps.advisory.outputs.sarif-path }}"
+          test -z "${{ steps.advisory.outputs.patch-path }}"
+
+      - name: Enforce smoke
+        id: enforce
+        uses: ./candidate-action
+        continue-on-error: true
+        with:
+          path: smoke/enforce
+          mode: enforce
+          severity-threshold: medium
+
+      - name: Validate enforce outputs
+        run: |
+          test "${{ steps.enforce.outcome }}" = "failure"
+          test "${{ steps.enforce.outputs.finding-count }}" = "2"
+          test "${{ steps.enforce.outputs.high-count }}" = "1"
+          test "${{ steps.enforce.outputs.medium-count }}" = "1"
+          test "${{ steps.enforce.outputs.low-count }}" = "0"
+          test -f "${{ steps.enforce.outputs.report-path }}"
+          test -f "${{ steps.enforce.outputs.sarif-path }}"
+          test -z "${{ steps.enforce.outputs.patch-path }}"
+
+      - name: Patch output smoke
+        id: patch
+        uses: ./candidate-action
+        with:
+          path: smoke/patch
+          sarif: 'false'
+          patch: 'true'
+
+      - name: Validate patch outputs
+        run: |
+          test "${{ steps.patch.outputs.finding-count }}" = "1"
+          test "${{ steps.patch.outputs.high-count }}" = "1"
+          test "${{ steps.patch.outputs.medium-count }}" = "0"
+          test "${{ steps.patch.outputs.low-count }}" = "0"
+          test -f "${{ steps.patch.outputs.report-path }}"
+          test -z "${{ steps.patch.outputs.sarif-path }}"
+          test -s "${{ steps.patch.outputs.patch-path }}"
+
+      - name: SARIF disabled smoke
+        id: sarif-disabled
+        uses: ./candidate-action
+        with:
+          path: smoke/sarif-disabled
+          sarif: 'false'
+
+      - name: Validate SARIF disabled outputs
+        run: |
+          test "${{ steps.sarif-disabled.outputs.finding-count }}" = "0"
+          test "${{ steps.sarif-disabled.outputs.high-count }}" = "0"
+          test "${{ steps.sarif-disabled.outputs.medium-count }}" = "0"
+          test "${{ steps.sarif-disabled.outputs.low-count }}" = "0"
+          test -f "${{ steps.sarif-disabled.outputs.report-path }}"
+          test -z "${{ steps.sarif-disabled.outputs.sarif-path }}"
+          test -z "${{ steps.sarif-disabled.outputs.patch-path }}"
+          test ! -e smoke/sarif-disabled/deterministic-deps-report/deterministic-deps.sarif
