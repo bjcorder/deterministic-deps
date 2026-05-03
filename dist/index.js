@@ -44248,6 +44248,7 @@ const VALID_SEVERITIES = ['low', 'medium', 'high'];
 const VALID_MODES = ['advisory', 'enforce'];
 const ECOSYSTEM_OPTIONS = {
     go: ['requireGoSum'],
+    jvm: ['allowDynamicVersionsWithGradleMetadata'],
     node: ['requireLockfile', 'allowVersionRangesWithLockfile'],
     python: ['requireProjectLockfile', 'requireRequirementHashes'],
     ruby: ['requireLockfile'],
@@ -45072,7 +45073,8 @@ function parsePyprojectDependencyEntries(lines) {
         }
         if (section === 'project' || section.startsWith('project.optional-dependencies')) {
             const arrayMatch = trimmed.match(/^([A-Za-z0-9_.-]+)\s*=\s*(\[.*)$/);
-            if (arrayMatch && (arrayMatch[1] === 'dependencies' || section.includes('optional-dependencies'))) {
+            if (arrayMatch &&
+                (arrayMatch[1] === 'dependencies' || section.includes('optional-dependencies'))) {
                 if (arrayMatch[2].includes(']')) {
                     entries.push(...pythonArrayEntries(arrayMatch[2], section, index + 1));
                 }
@@ -45345,13 +45347,237 @@ function checkJvm(context) {
     if (!/(pom\.xml|build\.gradle|build\.gradle\.kts)$/.test(context.file)) {
         return [];
     }
-    const findings = [];
-    context.lines.forEach((line, index) => {
-        if (/\bSNAPSHOT\b|latest\.[\w-]+|['"][^'"]*\+['"]|\[[^\]]*,[^\]]*\]|\([^)]+,[^)]+\)/i.test(line)) {
-            findings.push(finding('jvm/dynamic-version', 'jvm', context.file, index + 1, 'medium', `JVM dependency declaration '${line.trim()}' appears dynamic.`, 'Use fixed release versions and dependency verification or lockfiles where supported.'));
+    const entries = context.file.endsWith('pom.xml')
+        ? parseMavenDynamicVersionEntries(context)
+        : parseGradleDynamicVersionEntries(context);
+    const gradleMetadataSatisfiesPolicy = !context.file.endsWith('pom.xml') &&
+        ecosystemBoolean(context.config, 'jvm', 'allowDynamicVersionsWithGradleMetadata', true) &&
+        hasGradleLockOrVerificationMetadata(context);
+    if (gradleMetadataSatisfiesPolicy) {
+        return [];
+    }
+    return entries.map((entry) => finding('jvm/dynamic-version', 'jvm', context.file, entry.line, 'medium', `${entry.source === 'maven' ? 'Maven' : 'Gradle'} version declaration '${entry.text}' resolves to dynamic version '${entry.version}'.`, entry.source === 'gradle'
+        ? 'Use fixed release versions or commit Gradle dependency locking or verification metadata.'
+        : 'Use fixed release versions for Maven dependency, parent, plugin, and version-property declarations.'));
+}
+function parseMavenDynamicVersionEntries(context) {
+    const content = stripXmlComments(context.content);
+    const propertyReferences = new Set();
+    const entries = [];
+    for (const block of matchXmlBlocks(content, ['dependency', 'parent', 'plugin'])) {
+        for (const versionTag of matchXmlChildText(block.text, 'version')) {
+            const version = normalizeXmlText(versionTag.value);
+            collectMavenPropertyReferences(version).forEach((property) => propertyReferences.add(property));
+            if (isJvmDynamicVersion(version)) {
+                entries.push({
+                    source: 'maven',
+                    text: versionTag.text,
+                    version,
+                    line: lineNumberAt(content, block.index + versionTag.index)
+                });
+            }
         }
+    }
+    for (const propertiesBlock of matchXmlBlocks(content, ['properties'])) {
+        const bodyStart = propertiesBlock.text.indexOf('>') + 1;
+        const body = propertiesBlock.text.slice(bodyStart, propertiesBlock.text.lastIndexOf('</'));
+        for (const property of matchXmlProperties(body)) {
+            const version = normalizeXmlText(property.value);
+            if (propertyReferences.has(property.name) && isJvmDynamicVersion(version)) {
+                entries.push({
+                    source: 'maven',
+                    text: property.text,
+                    version,
+                    line: lineNumberAt(content, propertiesBlock.index + bodyStart + property.index)
+                });
+            }
+        }
+    }
+    return dedupeJvmEntries(entries);
+}
+function parseGradleDynamicVersionEntries(context) {
+    return stripGradleComments(context.content)
+        .split(/\r?\n/)
+        .flatMap((line, index) => parseGradleLineVersions(line, index + 1))
+        .filter((entry) => isJvmDynamicVersion(entry.version));
+}
+function parseGradleLineVersions(line, lineNumber) {
+    const trimmed = line.trim();
+    if (!isGradleDependencyOrPluginDeclaration(trimmed)) {
+        return [];
+    }
+    const entries = [];
+    const quotedValues = Array.from(trimmed.matchAll(/['"]([^'"]+)['"]/g), (match) => match[1]);
+    for (const value of quotedValues) {
+        const version = extractGradleCoordinateVersion(value);
+        if (version) {
+            entries.push({
+                source: 'gradle',
+                text: trimmed,
+                version,
+                line: lineNumber
+            });
+        }
+    }
+    for (const match of trimmed.matchAll(/\bversion\s*[:=]\s*['"]([^'"]+)['"]/g)) {
+        entries.push({
+            source: 'gradle',
+            text: trimmed,
+            version: match[1],
+            line: lineNumber
+        });
+    }
+    const pluginVersion = /\bversion\s+['"]([^'"]+)['"]/.exec(trimmed)?.[1];
+    if (pluginVersion) {
+        entries.push({
+            source: 'gradle',
+            text: trimmed,
+            version: pluginVersion,
+            line: lineNumber
+        });
+    }
+    return dedupeJvmEntries(entries);
+}
+function isGradleDependencyOrPluginDeclaration(line) {
+    return (/^(api|annotationProcessor|classpath|compile|compileOnly|debugImplementation|detachedConfiguration|implementation|kapt|ksp|runtime|runtimeOnly|testAnnotationProcessor|testCompile|testImplementation|testRuntime|testRuntimeOnly)\b/.test(line) ||
+        /^(add|constraints|enforcedPlatform|platform)\s*\(/.test(line) ||
+        /^id\s*(?:\(|['"])/.test(line));
+}
+function extractGradleCoordinateVersion(value) {
+    const parts = value.split(':');
+    if (parts.length < 3) {
+        return undefined;
+    }
+    return parts[parts.length - 1];
+}
+function isJvmDynamicVersion(version) {
+    const trimmed = version.trim();
+    return (/\bSNAPSHOT\b/i.test(trimmed) ||
+        /^latest(?:[.-][\w-]+)?$/i.test(trimmed) ||
+        /\+$/.test(trimmed) ||
+        /^[[(][^,]*,[^\])]*[\])]$/.test(trimmed));
+}
+function stripXmlComments(content) {
+    return content.replace(/<!--[\s\S]*?-->/g, (comment) => comment.replace(/[^\r\n]/g, ' '));
+}
+function matchXmlBlocks(content, names) {
+    return names.flatMap((name) => Array.from(content.matchAll(new RegExp(`<${name}\\b[^>]*>[\\s\\S]*?<\\/${name}>`, 'gi')), (match) => ({
+        text: match[0],
+        index: match.index ?? 0
+    })));
+}
+function matchXmlChildText(content, name) {
+    return Array.from(content.matchAll(new RegExp(`<${name}\\b[^>]*>([\\s\\S]*?)<\\/${name}>`, 'gi')), (match) => ({
+        text: match[0].trim(),
+        value: match[1],
+        index: match.index ?? 0
+    }));
+}
+function matchXmlProperties(content) {
+    return Array.from(content.matchAll(/<([A-Za-z0-9_.-]+)\b[^>]*>([\s\S]*?)<\/\1>/g), (match) => ({
+        name: match[1],
+        text: match[0].trim(),
+        value: match[2],
+        index: match.index ?? 0
+    }));
+}
+function normalizeXmlText(value) {
+    return value.replace(/\s+/g, ' ').trim();
+}
+function collectMavenPropertyReferences(value) {
+    return Array.from(value.matchAll(/\$\{([^}]+)\}/g), (match) => match[1]);
+}
+function stripGradleComments(content) {
+    let result = '';
+    let quote;
+    let lineComment = false;
+    let blockComment = false;
+    for (let index = 0; index < content.length; index += 1) {
+        const current = content[index];
+        const next = content[index + 1];
+        const previous = content[index - 1];
+        if (lineComment) {
+            if (current === '\n' || current === '\r') {
+                lineComment = false;
+                result += current;
+            }
+            else {
+                result += ' ';
+            }
+            continue;
+        }
+        if (blockComment) {
+            if (current === '*' && next === '/') {
+                result += '  ';
+                blockComment = false;
+                index += 1;
+            }
+            else {
+                result += current === '\n' || current === '\r' ? current : ' ';
+            }
+            continue;
+        }
+        if (!quote && current === '/' && next === '/') {
+            result += '  ';
+            lineComment = true;
+            index += 1;
+            continue;
+        }
+        if (!quote && current === '/' && next === '*') {
+            result += '  ';
+            blockComment = true;
+            index += 1;
+            continue;
+        }
+        if ((current === '"' || current === "'") && previous !== '\\') {
+            quote = quote === current ? undefined : current;
+        }
+        result += current;
+    }
+    return result;
+}
+function hasGradleLockOrVerificationMetadata(context) {
+    let current = node_path_1.default.dirname(context.absolutePath);
+    const root = node_path_1.default.resolve(context.root);
+    while (isPathWithinOrEqual(root, current)) {
+        if (node_fs_1.default.existsSync(node_path_1.default.join(current, 'gradle.lockfile')) ||
+            node_fs_1.default.existsSync(node_path_1.default.join(current, 'gradle', 'verification-metadata.xml')) ||
+            directoryHasFiles(node_path_1.default.join(current, 'gradle', 'dependency-locks'))) {
+            return true;
+        }
+        const parent = node_path_1.default.dirname(current);
+        if (parent === current) {
+            break;
+        }
+        current = parent;
+    }
+    return false;
+}
+function directoryHasFiles(directory) {
+    try {
+        return node_fs_1.default.existsSync(directory) && node_fs_1.default.readdirSync(directory).length > 0;
+    }
+    catch {
+        return false;
+    }
+}
+function isPathWithinOrEqual(parent, child) {
+    const relative = node_path_1.default.relative(parent, child);
+    return relative === '' || (!relative.startsWith('..') && !node_path_1.default.isAbsolute(relative));
+}
+function lineNumberAt(content, index) {
+    return content.slice(0, index).split(/\r?\n/).length;
+}
+function dedupeJvmEntries(entries) {
+    const seen = new Set();
+    return entries.filter((entry) => {
+        const key = `${entry.line}:${entry.version}:${entry.text}`;
+        if (seen.has(key)) {
+            return false;
+        }
+        seen.add(key);
+        return true;
     });
-    return findings;
 }
 function checkRuby(context) {
     if (!context.file.endsWith('Gemfile')) {

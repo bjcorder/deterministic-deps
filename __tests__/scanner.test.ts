@@ -29,7 +29,22 @@ describe('deterministic-deps scanner', () => {
     write(root, 'requirements.txt', 'requests==2.32.0\n')
     write(root, 'go.mod', 'module example.com/app\n')
     write(root, 'Cargo.toml', '[dependencies]\nserde = "1"\n')
-    write(root, 'pom.xml', '<version>1.0-SNAPSHOT</version>\n')
+    write(
+      root,
+      'pom.xml',
+      [
+        '<project>',
+        '  <dependencies>',
+        '    <dependency>',
+        '      <groupId>com.example</groupId>',
+        '      <artifactId>dynamic</artifactId>',
+        '      <version>1.0-SNAPSHOT</version>',
+        '    </dependency>',
+        '  </dependencies>',
+        '</project>',
+        ''
+      ].join('\n')
+    )
     write(
       root,
       'Gemfile',

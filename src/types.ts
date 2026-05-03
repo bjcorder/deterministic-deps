@@ -35,6 +35,9 @@ export interface EcosystemOptions {
   go?: {
     requireGoSum?: boolean
   }
+  jvm?: {
+    allowDynamicVersionsWithGradleMetadata?: boolean
+  }
   node?: {
     requireLockfile?: boolean
     allowVersionRangesWithLockfile?: boolean

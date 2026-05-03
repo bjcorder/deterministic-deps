@@ -44,7 +44,7 @@
   },
   "packageManager": "npm@11.12.1",
   "overrides": {
-    "undici": "^7.25.0"
+    "undici": "7.25.0"
   },
   "engines": {
     "node": ">=24"

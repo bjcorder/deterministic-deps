@@ -1,0 +1,2 @@
+# Gradle dependency lock state
+com.example:locked:1.2.3=compileClasspath

@@ -17,6 +17,8 @@ describe('configuration', () => {
         '  node:',
         '    requireLockfile: false',
         '    allowVersionRangesWithLockfile: true',
+        '  jvm:',
+        '    allowDynamicVersionsWithGradleMetadata: false',
         '  python:',
         '    requireRequirementHashes: false',
         ''
@@ -28,6 +30,7 @@ describe('configuration', () => {
 
     expect(config.ecosystems?.node?.requireLockfile).toBe(false)
     expect(config.ecosystems?.node?.allowVersionRangesWithLockfile).toBe(true)
+    expect(config.ecosystems?.jvm?.allowDynamicVersionsWithGradleMetadata).toBe(false)
     expect(config.ecosystems?.python?.requireRequirementHashes).toBe(false)
   })
 
@@ -52,6 +55,8 @@ describe('configuration', () => {
         '    requireLockfile: no',
         '    allowVersionRangesWithLockfile: true',
         '    typo: true',
+        '  jvm:',
+        '    allowDynamicVersionsWithGradleMetadata: maybe',
         '  madeup:',
         '    requireLockfile: true',
         ''
@@ -79,7 +84,8 @@ describe('configuration', () => {
         'Invalid allowlist entry; expected a mapping.',
         'Invalid ecosystems.node.requireLockfile; expected boolean true or false.',
         'Unknown option ecosystems.node.typo; known options are requireLockfile, allowVersionRangesWithLockfile.',
-        "Unknown ecosystem 'madeup'; known ecosystems are go, node, python, ruby, rust, terraform."
+        'Invalid ecosystems.jvm.allowDynamicVersionsWithGradleMetadata; expected boolean true or false.',
+        "Unknown ecosystem 'madeup'; known ecosystems are go, jvm, node, python, ruby, rust, terraform."
       ])
     )
   })

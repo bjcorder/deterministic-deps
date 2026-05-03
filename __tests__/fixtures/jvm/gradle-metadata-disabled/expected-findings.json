@@ -1,0 +1,9 @@
+[
+  {
+    "ruleId": "jvm/dynamic-version",
+    "ecosystem": "jvm",
+    "file": "build.gradle.kts",
+    "line": 2,
+    "severity": "medium"
+  }
+]

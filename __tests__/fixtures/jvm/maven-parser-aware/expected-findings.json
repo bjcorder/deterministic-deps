@@ -1,0 +1,30 @@
+[
+  {
+    "ruleId": "jvm/dynamic-version",
+    "ecosystem": "jvm",
+    "file": "pom.xml",
+    "line": 4,
+    "severity": "medium"
+  },
+  {
+    "ruleId": "jvm/dynamic-version",
+    "ecosystem": "jvm",
+    "file": "pom.xml",
+    "line": 11,
+    "severity": "medium"
+  },
+  {
+    "ruleId": "jvm/dynamic-version",
+    "ecosystem": "jvm",
+    "file": "pom.xml",
+    "line": 31,
+    "severity": "medium"
+  },
+  {
+    "ruleId": "jvm/dynamic-version",
+    "ecosystem": "jvm",
+    "file": "pom.xml",
+    "line": 42,
+    "severity": "medium"
+  }
+]

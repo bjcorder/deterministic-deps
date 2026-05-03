@@ -14,6 +14,7 @@ const VALID_SEVERITIES = ['low', 'medium', 'high'] as const
 const VALID_MODES = ['advisory', 'enforce'] as const
 const ECOSYSTEM_OPTIONS: Record<string, string[]> = {
   go: ['requireGoSum'],
+  jvm: ['allowDynamicVersionsWithGradleMetadata'],
   node: ['requireLockfile', 'allowVersionRangesWithLockfile'],
   python: ['requireProjectLockfile', 'requireRequirementHashes'],
   ruby: ['requireLockfile'],
