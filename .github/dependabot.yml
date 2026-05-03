@@ -4,6 +4,19 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    labels:
+      - dependencies
+      - security
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      npm-development:
+        dependency-type: development
+      npm-production:
+        dependency-type: production
     open-pull-requests-limit: 5
     ignore:
       - dependency-name: '@types/node'
@@ -13,4 +26,12 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    labels:
+      - dependencies
+      - ci
+    commit-message:
+      prefix: chore
+      include: scope
     open-pull-requests-limit: 5

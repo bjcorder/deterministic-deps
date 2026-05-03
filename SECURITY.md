@@ -6,7 +6,7 @@ Security fixes are provided for the latest released major version.
 
 ## Reporting a Vulnerability
 
-Please report suspected vulnerabilities through GitHub private vulnerability reporting when available, or by contacting the maintainer directly.
+Please report suspected vulnerabilities through GitHub private vulnerability reporting. If GitHub private vulnerability reporting is unavailable for your account, contact the maintainer directly.
 
 Do not open a public issue for sensitive reports. Include a minimal reproduction, affected version, and any known impact.
 
