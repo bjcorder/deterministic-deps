@@ -9,11 +9,27 @@ export interface Finding {
   severity: Severity
   message: string
   remediation: string
+  suggestion?: RemediationSuggestion
+}
+
+export interface RemediationSuggestion {
+  title: string
+  confidence: 'low' | 'medium' | 'high'
+  safeToApply: boolean
+  replacement?: LineReplacement
+}
+
+export interface LineReplacement {
+  file: string
+  line: number
+  oldText: string
+  newText: string
 }
 
 export interface Config {
   mode?: Mode
   severityThreshold?: Severity
+  patch?: boolean
   remoteValidation?: boolean
   remoteValidationTimeoutMs?: number
   remoteValidationRetries?: number
@@ -83,4 +99,5 @@ export interface ScanResult {
 export interface ReportResult {
   markdownPath: string
   sarifPath?: string
+  patchPath?: string
 }

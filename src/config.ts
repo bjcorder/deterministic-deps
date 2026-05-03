@@ -100,6 +100,7 @@ export function loadConfigWithDiagnostics(root: string, configPath: string): Con
     config: {
       mode: readMode(raw, diagnostics),
       severityThreshold: readSeverity(raw, 'severity-threshold', diagnostics),
+      patch: readBoolean(raw, 'patch', diagnostics),
       remoteValidation: readBoolean(raw, 'remote-validation', diagnostics),
       remoteValidationTimeoutMs: readPositiveInteger(raw, 'remote-timeout-ms', diagnostics),
       remoteValidationRetries: readPositiveInteger(raw, 'remote-retries', diagnostics),

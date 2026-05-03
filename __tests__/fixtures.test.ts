@@ -1,6 +1,7 @@
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
-import { renderMarkdown, renderSarif } from '../src/report'
+import { renderMarkdown, renderPatch, renderSarif, writeReports } from '../src/report'
 import { scan } from '../src/scanner'
 import { Config, Finding } from '../src/types'
 
@@ -151,6 +152,30 @@ describe('golden reports', () => {
       severity: 'medium',
       message: "Container image 'node:20' is not pinned by digest.",
       remediation: 'Use an immutable image reference such as name:tag@sha256:<digest>.'
+    },
+    {
+      ruleId: 'rust/git-rev-sha',
+      ecosystem: 'rust',
+      file: 'Cargo.toml',
+      line: 2,
+      severity: 'high',
+      message:
+        'Rust git dependency \'demo = { git = "https://github.com/acme/demo.git?rev=0123456789abcdef0123456789abcdef01234567" }\' does not pin a rev commit SHA.',
+      remediation: 'Add rev = "<40-character commit SHA>" to git dependencies.',
+      suggestion: {
+        title:
+          "Add explicit Cargo rev '0123456789abcdef0123456789abcdef01234567' from the existing git URL.",
+        confidence: 'high',
+        safeToApply: true,
+        replacement: {
+          file: 'Cargo.toml',
+          line: 2,
+          oldText:
+            'demo = { git = "https://github.com/acme/demo.git?rev=0123456789abcdef0123456789abcdef01234567" }',
+          newText:
+            'demo = { git = "https://github.com/acme/demo.git?rev=0123456789abcdef0123456789abcdef01234567", rev = "0123456789abcdef0123456789abcdef01234567" }'
+        }
+      }
     }
   ]
 
@@ -168,5 +193,48 @@ describe('golden reports', () => {
     )
 
     expect(`${JSON.stringify(renderSarif(findings), null, 2)}\n`).toBe(expected)
+  })
+
+  it('renders patch output for safe exact line replacements only', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'deterministic-deps-report-'))
+    fs.writeFileSync(
+      path.join(root, 'Cargo.toml'),
+      [
+        '[dependencies]',
+        'demo = { git = "https://github.com/acme/demo.git?rev=0123456789abcdef0123456789abcdef01234567" }',
+        ''
+      ].join('\n'),
+      'utf8'
+    )
+
+    const patch = renderPatch(root, findings)
+
+    expect(patch).toContain('diff --git a/Cargo.toml b/Cargo.toml')
+    expect(patch).toContain(
+      '+demo = { git = "https://github.com/acme/demo.git?rev=0123456789abcdef0123456789abcdef01234567", rev = "0123456789abcdef0123456789abcdef01234567" }'
+    )
+    expect(patch).not.toContain('.github/workflows/ci.yml')
+  })
+
+  it('writes optional patch reports and exposes the patch path', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'deterministic-deps-report-'))
+    fs.writeFileSync(
+      path.join(root, 'Cargo.toml'),
+      [
+        '[dependencies]',
+        'demo = { git = "https://github.com/acme/demo.git?rev=0123456789abcdef0123456789abcdef01234567" }',
+        ''
+      ].join('\n'),
+      'utf8'
+    )
+
+    const reports = writeReports(root, findings, false, true)
+
+    expect(reports.sarifPath).toBeUndefined()
+    expect(reports.patchPath).toBe(
+      path.join(root, 'deterministic-deps-report', 'suggestions.patch')
+    )
+    expect(reports.patchPath).toBeDefined()
+    expect(fs.readFileSync(reports.patchPath ?? '', 'utf8')).toContain('diff --git')
   })
 })

@@ -19,6 +19,12 @@
               "shortDescription": {
                 "text": "containers/image-digest"
               }
+            },
+            {
+              "id": "rust/git-rev-sha",
+              "shortDescription": {
+                "text": "rust/git-rev-sha"
+              }
             }
           ]
         }
@@ -69,6 +75,54 @@
             "ecosystem": "containers",
             "severity": "medium"
           }
+        },
+        {
+          "ruleId": "rust/git-rev-sha",
+          "level": "error",
+          "message": {
+            "text": "Rust git dependency 'demo = { git = \"https://github.com/acme/demo.git?rev=0123456789abcdef0123456789abcdef01234567\" }' does not pin a rev commit SHA. Add rev = \"<40-character commit SHA>\" to git dependencies."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Cargo.toml"
+                },
+                "region": {
+                  "startLine": 2
+                }
+              }
+            }
+          ],
+          "properties": {
+            "ecosystem": "rust",
+            "severity": "high"
+          },
+          "fixes": [
+            {
+              "description": {
+                "text": "Add explicit Cargo rev '0123456789abcdef0123456789abcdef01234567' from the existing git URL."
+              },
+              "artifactChanges": [
+                {
+                  "artifactLocation": {
+                    "uri": "Cargo.toml"
+                  },
+                  "replacements": [
+                    {
+                      "deletedRegion": {
+                        "startLine": 2,
+                        "endLine": 2
+                      },
+                      "insertedContent": {
+                        "text": "demo = { git = \"https://github.com/acme/demo.git?rev=0123456789abcdef0123456789abcdef01234567\", rev = \"0123456789abcdef0123456789abcdef01234567\" }\n"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
         }
       ]
     }

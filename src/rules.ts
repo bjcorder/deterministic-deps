@@ -65,6 +65,7 @@ interface RustDependencyEntry {
   name: string
   text: string
   line: number
+  lineText?: string
 }
 
 interface RubyGemEntry {
@@ -938,6 +939,7 @@ function checkRust(context: FileContext): Finding[] {
       /\bgit\s*=/.test(dependency.text) &&
       !/\brev\s*=\s*["'][a-f0-9]{40}["']/i.test(dependency.text)
     ) {
+      const suggestion = rustRevSuggestion(context.file, dependency)
       findings.push(
         finding(
           'rust/git-rev-sha',
@@ -946,7 +948,8 @@ function checkRust(context: FileContext): Finding[] {
           dependency.line,
           'high',
           `Rust git dependency '${dependency.text}' does not pin a rev commit SHA.`,
-          'Add rev = "<40-character commit SHA>" to git dependencies.'
+          'Add rev = "<40-character commit SHA>" to git dependencies.',
+          suggestion
         )
       )
     }
@@ -1017,11 +1020,43 @@ function parseRustDependencyEntries(lines: string[]): RustDependencyEntry[] {
     entries.push({
       name: assignment[1],
       text,
-      line: index + 1
+      line: index + 1,
+      lineText: line
     })
   })
 
   return entries
+}
+
+function rustRevSuggestion(
+  file: string,
+  dependency: RustDependencyEntry
+): Finding['suggestion'] | undefined {
+  if (!dependency.lineText || dependency.text.includes('#')) {
+    return undefined
+  }
+
+  const sha = /(?:[?&]rev=|#)([a-f0-9]{40})/i.exec(dependency.text)?.[1]
+  if (!sha || !/}\s*$/.test(dependency.lineText)) {
+    return undefined
+  }
+
+  const newText = dependency.lineText.replace(/\s*}\s*$/, `, rev = "${sha}" }`)
+  if (newText === dependency.lineText) {
+    return undefined
+  }
+
+  return {
+    title: `Add explicit Cargo rev '${sha}' from the existing git URL.`,
+    confidence: 'high',
+    safeToApply: true,
+    replacement: {
+      file,
+      line: dependency.line,
+      oldText: dependency.lineText,
+      newText
+    }
+  }
 }
 
 function isRustDependencySection(section: string): boolean {
@@ -2137,7 +2172,8 @@ function finding(
   line: number,
   severity: Severity,
   message: string,
-  remediation: string
+  remediation: string,
+  suggestion?: Finding['suggestion']
 ): Finding {
   return {
     ruleId,
@@ -2146,6 +2182,7 @@ function finding(
     line,
     severity,
     message,
-    remediation
+    remediation,
+    suggestion
   }
 }

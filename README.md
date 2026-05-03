@@ -116,6 +116,7 @@ jobs:
 | `exclude`            | common vendor/build dirs   | Newline or comma-separated glob patterns.                                       |
 | `severity-threshold` | `low`                      | Minimum severity that fails the action in enforce mode.                         |
 | `sarif`              | `true`                     | Write a SARIF report for code scanning upload.                                  |
+| `patch`              | `false`                    | Write a unified diff with safe remediation suggestions.                         |
 | `remote-validation`  | `false`                    | Opt in to remote validation of immutable GitHub commit references.              |
 | `remote-timeout-ms`  | `5000`                     | Per-request timeout for remote validation.                                      |
 | `remote-retries`     | `1`                        | Retry count for transient remote validation failures.                           |
@@ -130,6 +131,7 @@ jobs:
 | `low-count`     | Low severity findings.          |
 | `report-path`   | Markdown report path.           |
 | `sarif-path`    | SARIF report path when enabled. |
+| `patch-path`    | Patch report path when enabled. |
 
 ## Supported Ecosystems
 
@@ -140,6 +142,12 @@ V1 scans GitHub Actions, Docker and Compose files, devcontainers, Terraform/Open
 By default, the action is fully offline and only checks whether immutable refs are syntactically pinned. Set `remote-validation: true` to make GitHub API requests that confirm pinned GitHub Action SHAs and GitHub-hosted git dependency SHAs exist.
 
 Remote validation may reveal repository names and commit SHAs to GitHub, can be affected by API rate limits, and may be slower than static analysis. Public refs can be validated without credentials; when `GITHUB_TOKEN` is present, the action sends it to GitHub for higher rate limits and private repository access.
+
+## Remediation Suggestions
+
+Findings may include structured suggestions when the scanner can point to a precise replacement. Markdown reports show these suggestions, SARIF includes `fixes` for safe exact-line replacements, and `patch: true` writes a unified diff to `deterministic-deps-report/suggestions.patch` without modifying source files.
+
+Suggestions are intentionally conservative. The action does not resolve latest SHAs, tags, versions, or digests automatically, so most findings remain guidance-only until a deterministic replacement is already present in the source.
 
 ## Configuration
 

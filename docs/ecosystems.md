@@ -32,6 +32,12 @@ Gradle Groovy and Kotlin build files are parsed for common dependency and plugin
 
 Projects can tune lockfile and hash requirements with the `ecosystems` config block. This is intended for cases like library repositories that intentionally do not commit application lockfiles, or repositories that accept registry version ranges when a package manager lockfile is present.
 
+## Remediation Suggestions
+
+Reports can include structured remediation suggestions for findings that have a precise replacement. SARIF includes fixes for safe exact-line replacements, and `patch: true` writes those safe replacements to a unified diff without editing source files.
+
+The first supported safe patch is for one-line Cargo git dependencies that already contain a full commit SHA in the git URL but omit the explicit `rev` field. Other findings remain guidance-only unless the scanner can prove that a replacement is deterministic and scoped to one exact line.
+
 ## Remote Validation
 
 Remote validation is opt in with `remote-validation: true`. When enabled, the scanner checks pinned GitHub Action SHAs and GitHub-hosted git dependency SHAs against the GitHub commits API. This distinguishes a syntactically immutable SHA from a SHA that GitHub can actually resolve.
@@ -43,6 +49,7 @@ Remote validation does not clone repositories or resolve mutable tags. It uses b
 - The scanner avoids network calls unless `remote-validation` is enabled.
 - It does not parse every legal grammar branch for every package manager.
 - Remote validation currently checks GitHub commit refs only; container registry digest validation is not implemented.
+- Patch suggestions are intentionally limited to safe exact-line replacements and do not resolve newer refs or digests.
 - It may flag library repositories that intentionally omit lockfiles. Use `allowlist` or rule configuration for those cases.
 - Maven property resolution is limited to properties referenced directly from parsed version tags.
 
