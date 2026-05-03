@@ -55,6 +55,12 @@ interface PythonDependencyEntry {
   editable?: boolean
 }
 
+interface GoDirective {
+  keyword: string
+  text: string
+  line: number
+}
+
 const handlers: RuleHandler[] = [
   checkGithubActions,
   checkDockerLikeFiles,
@@ -771,23 +777,95 @@ function checkGo(context: FileContext): Finding[] {
     )
   }
 
-  context.lines.forEach((line, index) => {
-    if (/\breplace\b/.test(line) && isGitReference(line) && !hasCommitReference(line)) {
+  for (const directive of parseGoModDirectives(context.lines)) {
+    if (
+      directive.keyword === 'replace' &&
+      isGitReference(directive.text) &&
+      !hasCommitReference(directive.text) &&
+      !hasGoPseudoVersion(directive.text)
+    ) {
       findings.push(
         finding(
           'go/git-replace-sha',
           'go',
           context.file,
-          index + 1,
+          directive.line,
           'medium',
-          `Go replace directive '${line.trim()}' does not pin a commit SHA.`,
+          `Go replace directive '${directive.text}' does not pin a commit SHA.`,
           'Use immutable pseudo-versions or commit SHA refs for git replacements.'
         )
       )
     }
-  })
+  }
 
   return findings
+}
+
+function parseGoModDirectives(lines: string[]): GoDirective[] {
+  const directives: GoDirective[] = []
+  let blockKeyword: string | undefined
+
+  lines.forEach((line, index) => {
+    const stripped = stripGoModComment(line).trim()
+    if (!stripped) {
+      return
+    }
+
+    if (blockKeyword) {
+      if (stripped === ')') {
+        blockKeyword = undefined
+        return
+      }
+
+      directives.push({
+        keyword: blockKeyword,
+        text: `${blockKeyword} ${stripped}`,
+        line: index + 1
+      })
+      return
+    }
+
+    const blockMatch = stripped.match(/^(require|replace|exclude)\s*\($/)
+    if (blockMatch) {
+      blockKeyword = blockMatch[1]
+      return
+    }
+
+    const directiveMatch = stripped.match(/^(module|go|toolchain|require|replace|exclude|retract)\b(.*)$/)
+    if (directiveMatch) {
+      directives.push({
+        keyword: directiveMatch[1],
+        text: stripped,
+        line: index + 1
+      })
+    }
+  })
+
+  return directives
+}
+
+function stripGoModComment(line: string): string {
+  let quote: '"' | undefined
+
+  for (let index = 0; index < line.length; index += 1) {
+    const current = line[index]
+    const previous = line[index - 1]
+
+    if (current === '"' && previous !== '\\') {
+      quote = quote ? undefined : '"'
+      continue
+    }
+
+    if (!quote && current === '/' && line[index + 1] === '/') {
+      return line.slice(0, index)
+    }
+  }
+
+  return line
+}
+
+function hasGoPseudoVersion(value: string): boolean {
+  return /\bv\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?-\d{14}-[a-f0-9]{12}\b/i.test(value)
 }
 
 function checkRust(context: FileContext): Finding[] {

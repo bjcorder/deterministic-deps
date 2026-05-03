@@ -1,0 +1,9 @@
+[
+  {
+    "ruleId": "go/git-replace-sha",
+    "ecosystem": "go",
+    "file": "go.mod",
+    "line": 11,
+    "severity": "medium"
+  }
+]

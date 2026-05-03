@@ -46,7 +46,7 @@ Local `./` and `../` actions are allowed.
 | Rule                 | Severity | Behavior                                        |
 | -------------------- | -------- | ----------------------------------------------- |
 | `go/sum-required`    | high     | `go.mod` requires `go.sum`.                     |
-| `go/git-replace-sha` | medium   | Git-like replacement directives must not float. |
+| `go/git-replace-sha` | medium   | Git-like `replace` directives must use immutable pseudo-versions or commit refs. |
 
 ## Rust
 

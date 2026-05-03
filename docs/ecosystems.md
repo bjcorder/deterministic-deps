@@ -18,6 +18,8 @@ Node package manifests are parsed as JSON. The scanner evaluates `dependencies`,
 
 Python requirements files are parsed into logical entries before evaluation, including line continuations, comments, options, hashes, editable installs, extras, direct references, and environment markers. `pyproject.toml` dependency arrays, Poetry dependency groups, and Pipfile package sections are parsed conservatively for lockfile requirements and git SHA checks.
 
+Go module files are parsed by directive, including single-line and block `require`, `replace`, and `exclude` forms. Comments are ignored, and git replacements pass when they use a full commit reference or Go pseudo-version.
+
 ## Policy Options
 
 Projects can tune lockfile and hash requirements with the `ecosystems` config block. This is intended for cases like library repositories that intentionally do not commit application lockfiles, or repositories that accept registry version ranges when a package manager lockfile is present.

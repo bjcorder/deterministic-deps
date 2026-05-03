@@ -45184,12 +45184,69 @@ function checkGo(context) {
         ecosystemBoolean(context.config, 'go', 'requireGoSum', true)) {
         findings.push(finding('go/sum-required', 'go', context.file, 1, 'high', 'go.mod was found without go.sum.', 'Commit go.sum so module checksums are locked.'));
     }
-    context.lines.forEach((line, index) => {
-        if (/\breplace\b/.test(line) && isGitReference(line) && !hasCommitReference(line)) {
-            findings.push(finding('go/git-replace-sha', 'go', context.file, index + 1, 'medium', `Go replace directive '${line.trim()}' does not pin a commit SHA.`, 'Use immutable pseudo-versions or commit SHA refs for git replacements.'));
+    for (const directive of parseGoModDirectives(context.lines)) {
+        if (directive.keyword === 'replace' &&
+            isGitReference(directive.text) &&
+            !hasCommitReference(directive.text) &&
+            !hasGoPseudoVersion(directive.text)) {
+            findings.push(finding('go/git-replace-sha', 'go', context.file, directive.line, 'medium', `Go replace directive '${directive.text}' does not pin a commit SHA.`, 'Use immutable pseudo-versions or commit SHA refs for git replacements.'));
+        }
+    }
+    return findings;
+}
+function parseGoModDirectives(lines) {
+    const directives = [];
+    let blockKeyword;
+    lines.forEach((line, index) => {
+        const stripped = stripGoModComment(line).trim();
+        if (!stripped) {
+            return;
+        }
+        if (blockKeyword) {
+            if (stripped === ')') {
+                blockKeyword = undefined;
+                return;
+            }
+            directives.push({
+                keyword: blockKeyword,
+                text: `${blockKeyword} ${stripped}`,
+                line: index + 1
+            });
+            return;
+        }
+        const blockMatch = stripped.match(/^(require|replace|exclude)\s*\($/);
+        if (blockMatch) {
+            blockKeyword = blockMatch[1];
+            return;
+        }
+        const directiveMatch = stripped.match(/^(module|go|toolchain|require|replace|exclude|retract)\b(.*)$/);
+        if (directiveMatch) {
+            directives.push({
+                keyword: directiveMatch[1],
+                text: stripped,
+                line: index + 1
+            });
         }
     });
-    return findings;
+    return directives;
+}
+function stripGoModComment(line) {
+    let quote;
+    for (let index = 0; index < line.length; index += 1) {
+        const current = line[index];
+        const previous = line[index - 1];
+        if (current === '"' && previous !== '\\') {
+            quote = quote ? undefined : '"';
+            continue;
+        }
+        if (!quote && current === '/' && line[index + 1] === '/') {
+            return line.slice(0, index);
+        }
+    }
+    return line;
+}
+function hasGoPseudoVersion(value) {
+    return /\bv\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?-\d{14}-[a-f0-9]{12}\b/i.test(value);
 }
 function checkRust(context) {
     if (!context.file.endsWith('Cargo.toml')) {
