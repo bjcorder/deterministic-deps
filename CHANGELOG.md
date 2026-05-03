@@ -8,6 +8,8 @@ All notable changes to this project will be documented in this file.
   tags before moving the floating `v1` tag.
 - Enriched SARIF output with rule descriptions, documentation links, default severity metadata, and
   stable partial fingerprints for code scanning alerts.
+- Added warning diagnostics for invalid direct action inputs while preserving config/default
+  fallback behavior.
 
 ## 0.1.0
 

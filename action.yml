@@ -6,7 +6,6 @@ inputs:
   mode:
     description: Reporting mode. Use advisory to report only, or enforce to fail at the configured severity threshold.
     required: false
-    default: advisory
   path:
     description: Repository path to scan.
     required: false
@@ -26,27 +25,21 @@ inputs:
   severity-threshold:
     description: Minimum severity that fails the action in enforce mode.
     required: false
-    default: low
   sarif:
     description: Whether to write a SARIF report.
     required: false
-    default: 'true'
   patch:
     description: Whether to write a unified diff with safe remediation suggestions.
     required: false
-    default: 'false'
   remote-validation:
     description: Opt in to remote validation of immutable GitHub commit references.
     required: false
-    default: 'false'
   remote-timeout-ms:
     description: Per-request timeout for remote validation.
     required: false
-    default: '5000'
   remote-retries:
     description: Retry count for transient remote validation failures.
     required: false
-    default: '1'
 
 outputs:
   finding-count:

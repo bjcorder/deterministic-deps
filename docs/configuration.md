@@ -1,6 +1,6 @@
 # Configuration
 
-`deterministic-deps` reads `.deterministic-deps.yml` from the scan root by default. Action inputs override matching config values.
+`deterministic-deps` reads `.deterministic-deps.yml` from the scan root by default. Valid action inputs override matching config values.
 
 ```yaml
 mode: advisory
@@ -84,6 +84,19 @@ Examples that warn and fall back:
 - `include: '**/*.tf'`
 - `rules` or `ecosystems` values that are not booleans
 - Unknown ecosystem names or option names
+
+Direct action inputs follow the same warning-and-fallback model. Invalid explicit inputs do not fail
+the action by default; they emit GitHub Actions warnings and fall back to the matching config value
+when available, otherwise to the action default.
+
+Accepted direct input values:
+
+| Input                                 | Accepted values                             |
+| ------------------------------------- | ------------------------------------------- |
+| `mode`                                | `advisory` or `enforce`                     |
+| `severity-threshold`                  | `low`, `medium`, or `high`                  |
+| `sarif`, `patch`, `remote-validation` | `true` or `false`                           |
+| `remote-timeout-ms`, `remote-retries` | Non-negative integers such as `0` or `5000` |
 
 ## Ecosystem Options
 

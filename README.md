@@ -121,6 +121,11 @@ jobs:
 | `remote-timeout-ms`  | `5000`                     | Per-request timeout for remote validation.                                      |
 | `remote-retries`     | `1`                        | Retry count for transient remote validation failures.                           |
 
+Invalid direct inputs emit GitHub Actions warnings and fall back deterministically to the matching
+config value when one exists, or to the default above. Accepted values are `advisory` or `enforce`
+for `mode`; `low`, `medium`, or `high` for `severity-threshold`; `true` or `false` for boolean
+inputs; and non-negative integers for remote timeout and retry inputs.
+
 ## Outputs
 
 | Output          | Description                     |
