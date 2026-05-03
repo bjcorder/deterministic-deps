@@ -44625,7 +44625,7 @@ const constants_1 = __nccwpck_require__(7242);
 const config_1 = __nccwpck_require__(2973);
 const report_1 = __nccwpck_require__(665);
 const scanner_1 = __nccwpck_require__(4105);
-const rules_1 = __nccwpck_require__(9244);
+const rules_1 = __nccwpck_require__(5755);
 async function run() {
     const workspace = process.env.GITHUB_WORKSPACE ?? process.cwd();
     const scanRoot = (0, scanner_1.resolveScanRoot)(workspace, core.getInput('path') || '.');
@@ -45119,7 +45119,7 @@ function escapeMarkdown(value) {
 
 /***/ }),
 
-/***/ 9244:
+/***/ 5755:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -45128,6 +45128,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.rules = void 0;
 exports.evaluateFile = evaluateFile;
 exports.finalizeFindings = finalizeFindings;
 exports.shouldReportFailure = shouldReportFailure;
@@ -45137,16 +45138,28 @@ const node_path_1 = __importDefault(__nccwpck_require__(6760));
 const js_yaml_1 = __importDefault(__nccwpck_require__(4281));
 const minimatch_1 = __nccwpck_require__(6507);
 const constants_1 = __nccwpck_require__(7242);
-const handlers = [
-    checkGithubActions,
-    checkDockerLikeFiles,
-    checkTerraform,
-    checkNode,
-    checkPython,
-    checkGo,
-    checkRust,
-    checkJvm,
-    checkRuby
+exports.rules = [
+    rule('github-actions/sha-pin', 'github-actions', 'high', 'External GitHub Actions references must use full commit SHA refs.', checkGithubActions),
+    rule('github-actions/full-sha', 'github-actions', 'high', 'Short GitHub Actions SHAs are rejected because they are not explicit enough.', checkGithubActions),
+    rule('github-actions/docker-digest', 'github-actions', 'high', 'Docker action references must include sha256 digests.', checkGithubActions),
+    rule('containers/image-digest', 'containers', 'medium', 'Container image references should include immutable sha256 digests.', checkDockerLikeFiles),
+    rule('terraform/git-module-sha', 'terraform', 'high', 'Terraform module git sources must use full commit SHA refs.', checkTerraform),
+    rule('terraform/provider-lock', 'terraform', 'medium', 'Terraform provider constraints require exact versions or provider lockfiles.', checkTerraform),
+    rule('node/lockfile-required', 'node', 'high', 'Node package manifests with dependencies require a package manager lockfile.', checkNode),
+    rule('node/lockfile-coverage', 'node', 'medium', 'Node registry dependencies require lockfile entries with integrity metadata.', checkNode),
+    rule('node/non-deterministic-spec', 'node', 'medium', 'Node dependencies must avoid ranges, tags, branch refs, and unpinned git specs.', checkNode),
+    rule('python/hash-pinned-requirement', 'python', 'medium', 'Requirements entries should use exact pins with hash metadata.', checkPython),
+    rule('python/git-sha', 'python', 'high', 'Python git dependencies must pin full commit SHAs.', checkPython),
+    rule('python/lockfile-required', 'python', 'high', 'Python project dependency declarations require supported lockfiles.', checkPython),
+    rule('go/sum-required', 'go', 'high', 'Go modules require go.sum.', checkGo),
+    rule('go/git-replace-sha', 'go', 'medium', 'Go replace directives that use git sources require immutable refs.', checkGo),
+    rule('rust/lockfile-required', 'rust', 'high', 'Cargo manifests require Cargo.lock for deterministic application builds.', checkRust),
+    rule('rust/git-rev-sha', 'rust', 'high', 'Rust git dependencies must include full rev commit SHAs.', checkRust),
+    rule('jvm/dynamic-version', 'jvm', 'medium', 'Maven and Gradle declarations reject dynamic JVM versions unless supported Gradle metadata satisfies policy.', checkJvm),
+    rule('ruby/lockfile-required', 'ruby', 'high', 'Gemfiles require Gemfile.lock for deterministic resolution.', checkRuby),
+    rule('ruby/git-ref-sha', 'ruby', 'high', 'Ruby git dependencies must pin full ref commit SHAs.', checkRuby),
+    rule('remote/github-ref', 'remote', 'high', 'Remote validation reports pinned GitHub commit SHAs that cannot be found.', noFileFindings),
+    rule('remote/validation-error', 'remote', 'low', 'Remote validation reports deterministic findings for timeout, rate-limit, authorization, and API errors.', noFileFindings)
 ];
 function evaluateFile(root, file, config, trackedFiles) {
     const absolutePath = node_path_1.default.join(root, file);
@@ -45159,7 +45172,7 @@ function evaluateFile(root, file, config, trackedFiles) {
         config,
         lines: content.split(/\r?\n/)
     };
-    return handlers
+    return uniqueRuleHandlers()
         .flatMap((handler) => handler(context))
         .map((finding) => applySeverityOverride(finding, config))
         .filter((finding) => shouldKeepFinding(finding, config, trackedFiles));
@@ -45173,6 +45186,9 @@ function shouldKeepFinding(finding, config, trackedFiles) {
     return (config.rules?.[finding.ruleId] !== false &&
         hasRequiredCompanionFile(finding, trackedFiles) &&
         !isAllowlisted(finding, config));
+}
+function uniqueRuleHandlers() {
+    return Array.from(new Set(exports.rules.map((ruleDefinition) => ruleDefinition.evaluate)));
 }
 function checkGithubActions(context) {
     if (!/\.ya?ml$/i.test(context.file) || !isWorkflowOrActionFile(context.file)) {
@@ -46575,6 +46591,18 @@ function shouldReportFailure(findings, threshold) {
 function defaultExcludeMatchers() {
     return constants_1.DEFAULT_EXCLUDE.map((pattern) => new minimatch_1.Minimatch(pattern, { dot: true }));
 }
+function rule(id, ecosystem, defaultSeverity, description, evaluate) {
+    return {
+        id,
+        ecosystem,
+        defaultSeverity,
+        description,
+        evaluate
+    };
+}
+function noFileFindings() {
+    return [];
+}
 function finding(ruleId, ecosystem, file, line, severity, message, remediation, suggestion) {
     return {
         ruleId,
@@ -46607,7 +46635,7 @@ const node_path_1 = __importDefault(__nccwpck_require__(6760));
 const glob_1 = __nccwpck_require__(8941);
 const constants_1 = __nccwpck_require__(7242);
 const remote_1 = __nccwpck_require__(6473);
-const rules_1 = __nccwpck_require__(9244);
+const rules_1 = __nccwpck_require__(5755);
 async function scan(options) {
     const files = await discoverFiles(options.root, options.include, options.exclude, options.config);
     const trackedFiles = new Set(files);

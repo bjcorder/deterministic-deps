@@ -4,6 +4,8 @@ Each finding includes a stable rule id, ecosystem, severity, file, line, message
 
 Some findings also include structured remediation suggestions. Safe exact-line suggestions appear in Markdown reports, SARIF `fixes`, and optional patch output. Suggestions are conservative and are only emitted when the deterministic replacement is already present in the scanned source.
 
+Rule ids, ecosystems, default severities, descriptions, and evaluators are registered in code. Tests validate this catalog against the documented rule ids so configuration controls such as `rules`, `severity`, and `allowlist` stay aligned with the scanner.
+
 ## GitHub Actions
 
 | Rule                           | Severity | Behavior                                                                       |

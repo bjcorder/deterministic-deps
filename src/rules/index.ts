@@ -8,8 +8,8 @@ import {
   SEVERITY_ORDER,
   SHA_PATTERN,
   SHORT_SHA_PATTERN
-} from './constants'
-import { Config, Finding, Severity } from './types'
+} from '../constants'
+import { Config, Finding, Severity } from '../types'
 
 interface FileContext {
   root: string
@@ -31,6 +31,14 @@ interface TerraformBlock {
 }
 
 type RuleHandler = (context: FileContext) => Finding[]
+
+export interface Rule {
+  id: string
+  ecosystem: string
+  defaultSeverity: Severity
+  description: string
+  evaluate: RuleHandler
+}
 
 interface NodeDependencyEntry {
   section: string
@@ -80,16 +88,148 @@ interface JvmVersionEntry {
   line: number
 }
 
-const handlers: RuleHandler[] = [
-  checkGithubActions,
-  checkDockerLikeFiles,
-  checkTerraform,
-  checkNode,
-  checkPython,
-  checkGo,
-  checkRust,
-  checkJvm,
-  checkRuby
+export const rules: Rule[] = [
+  rule(
+    'github-actions/sha-pin',
+    'github-actions',
+    'high',
+    'External GitHub Actions references must use full commit SHA refs.',
+    checkGithubActions
+  ),
+  rule(
+    'github-actions/full-sha',
+    'github-actions',
+    'high',
+    'Short GitHub Actions SHAs are rejected because they are not explicit enough.',
+    checkGithubActions
+  ),
+  rule(
+    'github-actions/docker-digest',
+    'github-actions',
+    'high',
+    'Docker action references must include sha256 digests.',
+    checkGithubActions
+  ),
+  rule(
+    'containers/image-digest',
+    'containers',
+    'medium',
+    'Container image references should include immutable sha256 digests.',
+    checkDockerLikeFiles
+  ),
+  rule(
+    'terraform/git-module-sha',
+    'terraform',
+    'high',
+    'Terraform module git sources must use full commit SHA refs.',
+    checkTerraform
+  ),
+  rule(
+    'terraform/provider-lock',
+    'terraform',
+    'medium',
+    'Terraform provider constraints require exact versions or provider lockfiles.',
+    checkTerraform
+  ),
+  rule(
+    'node/lockfile-required',
+    'node',
+    'high',
+    'Node package manifests with dependencies require a package manager lockfile.',
+    checkNode
+  ),
+  rule(
+    'node/lockfile-coverage',
+    'node',
+    'medium',
+    'Node registry dependencies require lockfile entries with integrity metadata.',
+    checkNode
+  ),
+  rule(
+    'node/non-deterministic-spec',
+    'node',
+    'medium',
+    'Node dependencies must avoid ranges, tags, branch refs, and unpinned git specs.',
+    checkNode
+  ),
+  rule(
+    'python/hash-pinned-requirement',
+    'python',
+    'medium',
+    'Requirements entries should use exact pins with hash metadata.',
+    checkPython
+  ),
+  rule(
+    'python/git-sha',
+    'python',
+    'high',
+    'Python git dependencies must pin full commit SHAs.',
+    checkPython
+  ),
+  rule(
+    'python/lockfile-required',
+    'python',
+    'high',
+    'Python project dependency declarations require supported lockfiles.',
+    checkPython
+  ),
+  rule('go/sum-required', 'go', 'high', 'Go modules require go.sum.', checkGo),
+  rule(
+    'go/git-replace-sha',
+    'go',
+    'medium',
+    'Go replace directives that use git sources require immutable refs.',
+    checkGo
+  ),
+  rule(
+    'rust/lockfile-required',
+    'rust',
+    'high',
+    'Cargo manifests require Cargo.lock for deterministic application builds.',
+    checkRust
+  ),
+  rule(
+    'rust/git-rev-sha',
+    'rust',
+    'high',
+    'Rust git dependencies must include full rev commit SHAs.',
+    checkRust
+  ),
+  rule(
+    'jvm/dynamic-version',
+    'jvm',
+    'medium',
+    'Maven and Gradle declarations reject dynamic JVM versions unless supported Gradle metadata satisfies policy.',
+    checkJvm
+  ),
+  rule(
+    'ruby/lockfile-required',
+    'ruby',
+    'high',
+    'Gemfiles require Gemfile.lock for deterministic resolution.',
+    checkRuby
+  ),
+  rule(
+    'ruby/git-ref-sha',
+    'ruby',
+    'high',
+    'Ruby git dependencies must pin full ref commit SHAs.',
+    checkRuby
+  ),
+  rule(
+    'remote/github-ref',
+    'remote',
+    'high',
+    'Remote validation reports pinned GitHub commit SHAs that cannot be found.',
+    noFileFindings
+  ),
+  rule(
+    'remote/validation-error',
+    'remote',
+    'low',
+    'Remote validation reports deterministic findings for timeout, rate-limit, authorization, and API errors.',
+    noFileFindings
+  )
 ]
 
 export function evaluateFile(
@@ -109,7 +249,7 @@ export function evaluateFile(
     lines: content.split(/\r?\n/)
   }
 
-  return handlers
+  return uniqueRuleHandlers()
     .flatMap((handler) => handler(context))
     .map((finding) => applySeverityOverride(finding, config))
     .filter((finding) => shouldKeepFinding(finding, config, trackedFiles))
@@ -131,6 +271,10 @@ function shouldKeepFinding(finding: Finding, config: Config, trackedFiles: Set<s
     hasRequiredCompanionFile(finding, trackedFiles) &&
     !isAllowlisted(finding, config)
   )
+}
+
+function uniqueRuleHandlers(): RuleHandler[] {
+  return Array.from(new Set(rules.map((ruleDefinition) => ruleDefinition.evaluate)))
 }
 
 function checkGithubActions(context: FileContext): Finding[] {
@@ -2163,6 +2307,26 @@ export function shouldReportFailure(findings: Finding[], threshold: Severity): b
 
 export function defaultExcludeMatchers(): Minimatch[] {
   return DEFAULT_EXCLUDE.map((pattern) => new Minimatch(pattern, { dot: true }))
+}
+
+function rule(
+  id: string,
+  ecosystem: string,
+  defaultSeverity: Severity,
+  description: string,
+  evaluate: RuleHandler
+): Rule {
+  return {
+    id,
+    ecosystem,
+    defaultSeverity,
+    description,
+    evaluate
+  }
+}
+
+function noFileFindings(): Finding[] {
+  return []
 }
 
 function finding(

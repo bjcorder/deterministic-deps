@@ -14,4 +14,5 @@ All notable changes to this project will be documented in this file.
 - Added a fixture-based rule test matrix and golden report tests.
 - Added Markdown and SARIF report generation.
 - Added structured remediation suggestions, SARIF fixes, and optional patch output for safe exact-line replacements.
+- Added a rule registry with code metadata for documented rule ids and default severities.
 - Added open-source project documentation and CI scaffolding.
