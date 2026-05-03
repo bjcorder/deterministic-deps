@@ -53,7 +53,7 @@ jobs:
           edition = "2021"
 
           [dependencies]
-          demo = { git = "https://github.com/example/demo" }
+          demo = { git = "https://github.com/example/demo.git?rev=0123456789abcdef0123456789abcdef01234567" }
           TOML
           touch smoke/patch/Cargo.lock
 
