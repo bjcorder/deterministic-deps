@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## 1.0.0 - 2026-05-03
 
 - Published the v1 GitHub Action interface for advisory and enforce modes.
+- Set package and action metadata for the stable Marketplace `v1.0.0` release.
 - Supported static dependency determinism checks for GitHub Actions, container files,
   Terraform/OpenTofu, Node.js, Python, Go, Rust, JVM, and Ruby.
 - Added Markdown reports, SARIF reports for code scanning, count outputs, and optional patch output
@@ -23,6 +24,7 @@ All notable changes to this project will be documented in this file.
   partial fingerprints for code scanning alerts.
 - Added release validation workflows, including a manual `v1 tag smoke` workflow for validating a
   semantic version tag before moving the floating `v1` tag.
+- Added release-readiness audit and whitespace checks to CI and release validation.
 - Added scanner guardrail coverage for many dependency files and deeply nested default excludes.
 - Documented v1 limits: static analysis by default, no package registry resolution, no container
   digest existence checks, no broad autofix, and remote validation limited to GitHub commit refs.

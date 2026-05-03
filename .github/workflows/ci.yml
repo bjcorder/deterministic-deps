@@ -28,6 +28,7 @@ jobs:
       - run: npm run lint
       - run: npm test -- --runInBand
       - run: npm run build
+      - run: npm run audit
 
   dist:
     name: check dist
@@ -41,6 +42,7 @@ jobs:
       - run: npm ci
       - run: npm run bundle
       - run: git diff --exit-code -- dist/index.js dist/index.js.map dist/licenses.txt
+      - run: git diff --check
 
   local-action:
     name: test local action

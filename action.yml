@@ -1,11 +1,12 @@
 name: Deterministic Deps
 author: Brian Corder
-description: Detect non-deterministic dependency declarations across ecosystems.
+description: Static dependency determinism scanner for GitHub Actions, containers, IaC, and package manifests.
 
 inputs:
   mode:
     description: Reporting mode. Use advisory to report only, or enforce to fail at the configured severity threshold. Defaults to advisory.
     required: false
+    default: advisory
   path:
     description: Repository path to scan.
     required: false
@@ -25,21 +26,27 @@ inputs:
   severity-threshold:
     description: Minimum severity that fails the action in enforce mode. Defaults to low.
     required: false
+    default: low
   sarif:
     description: Whether to write a SARIF report. Defaults to true.
     required: false
+    default: 'true'
   patch:
     description: Whether to write a unified diff with safe remediation suggestions. Defaults to false.
     required: false
+    default: 'false'
   remote-validation:
     description: Opt in to remote validation of immutable GitHub commit references. Defaults to false.
     required: false
+    default: 'false'
   remote-timeout-ms:
     description: Per-request timeout for remote validation. Defaults to 5000.
     required: false
+    default: '5000'
   remote-retries:
     description: Retry count for transient remote validation failures. Defaults to 1.
     required: false
+    default: '1'
 
 outputs:
   finding-count:

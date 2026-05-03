@@ -1,6 +1,6 @@
 {
   "name": "deterministic-deps",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "GitHub Action to enforce deterministic dependency declarations across ecosystems.",
   "main": "dist/index.js",
@@ -11,6 +11,7 @@
     "format:write": "prettier --write .",
     "lint": "eslint .",
     "test": "jest --coverage --runInBand",
+    "audit": "npm audit --audit-level=high",
     "all": "npm run lint && npm run test && npm run build && npm run bundle"
   },
   "keywords": [
