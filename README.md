@@ -22,7 +22,7 @@ jobs:
       security-events: write
     steps:
       - uses: actions/checkout@<full-commit-sha>
-      - uses: bjcorder/deterministic-deps@v1
+      - uses: bjcorder/deterministic-deps@<full-commit-sha>
         with:
           mode: advisory
 ```
@@ -30,11 +30,80 @@ jobs:
 To fail builds once findings are actionable:
 
 ```yaml
-- uses: bjcorder/deterministic-deps@v1
+- uses: bjcorder/deterministic-deps@<full-commit-sha>
   with:
     mode: enforce
     severity-threshold: medium
 ```
+
+## Code Scanning SARIF Upload
+
+The action writes SARIF by default and exposes the generated path as `sarif-path`. Upload it with GitHub code scanning in advisory mode:
+
+```yaml
+name: dependency determinism
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  deterministic-deps:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - id: deterministic-deps
+        uses: bjcorder/deterministic-deps@<full-commit-sha>
+        with:
+          mode: advisory
+          sarif: true
+      - uses: github/codeql-action/upload-sarif@e46ed2cbd01164d986452f91f178727624ae40d7
+        if: always() && steps.deterministic-deps.outputs.sarif-path != ''
+        with:
+          sarif_file: ${{ steps.deterministic-deps.outputs.sarif-path }}
+          category: deterministic-deps
+```
+
+In enforce mode, keep the scan step non-blocking long enough to upload the SARIF, then fail the job afterward if the action found threshold-matching findings:
+
+```yaml
+name: dependency determinism
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  deterministic-deps:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - id: deterministic-deps
+        uses: bjcorder/deterministic-deps@<full-commit-sha>
+        continue-on-error: true
+        with:
+          mode: enforce
+          severity-threshold: medium
+          sarif: true
+      - uses: github/codeql-action/upload-sarif@e46ed2cbd01164d986452f91f178727624ae40d7
+        if: always() && steps.deterministic-deps.outputs.sarif-path != ''
+        with:
+          sarif_file: ${{ steps.deterministic-deps.outputs.sarif-path }}
+          category: deterministic-deps
+      - name: Fail when deterministic-deps failed
+        if: steps.deterministic-deps.outcome == 'failure'
+        run: exit 1
+```
+
+`<full-commit-sha>` is a placeholder for the immutable commit you want to run. See [docs/sarif.md](docs/sarif.md) for permissions, private repository notes, and report path details.
 
 ## Inputs
 
