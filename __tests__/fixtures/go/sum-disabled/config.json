@@ -1,0 +1,7 @@
+{
+  "ecosystems": {
+    "go": {
+      "requireGoSum": false
+    }
+  }
+}

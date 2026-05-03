@@ -55,6 +55,23 @@ interface PythonDependencyEntry {
   editable?: boolean
 }
 
+interface GoDirective {
+  keyword: string
+  text: string
+  line: number
+}
+
+interface RustDependencyEntry {
+  name: string
+  text: string
+  line: number
+}
+
+interface RubyGemEntry {
+  text: string
+  line: number
+}
+
 const handlers: RuleHandler[] = [
   checkGithubActions,
   checkDockerLikeFiles,
@@ -771,23 +788,95 @@ function checkGo(context: FileContext): Finding[] {
     )
   }
 
-  context.lines.forEach((line, index) => {
-    if (/\breplace\b/.test(line) && isGitReference(line) && !hasCommitReference(line)) {
+  for (const directive of parseGoModDirectives(context.lines)) {
+    if (
+      directive.keyword === 'replace' &&
+      isGitReference(directive.text) &&
+      !hasCommitReference(directive.text) &&
+      !hasGoPseudoVersion(directive.text)
+    ) {
       findings.push(
         finding(
           'go/git-replace-sha',
           'go',
           context.file,
-          index + 1,
+          directive.line,
           'medium',
-          `Go replace directive '${line.trim()}' does not pin a commit SHA.`,
+          `Go replace directive '${directive.text}' does not pin a commit SHA.`,
           'Use immutable pseudo-versions or commit SHA refs for git replacements.'
         )
       )
     }
-  })
+  }
 
   return findings
+}
+
+function parseGoModDirectives(lines: string[]): GoDirective[] {
+  const directives: GoDirective[] = []
+  let blockKeyword: string | undefined
+
+  lines.forEach((line, index) => {
+    const stripped = stripGoModComment(line).trim()
+    if (!stripped) {
+      return
+    }
+
+    if (blockKeyword) {
+      if (stripped === ')') {
+        blockKeyword = undefined
+        return
+      }
+
+      directives.push({
+        keyword: blockKeyword,
+        text: `${blockKeyword} ${stripped}`,
+        line: index + 1
+      })
+      return
+    }
+
+    const blockMatch = stripped.match(/^(require|replace|exclude)\s*\($/)
+    if (blockMatch) {
+      blockKeyword = blockMatch[1]
+      return
+    }
+
+    const directiveMatch = stripped.match(/^(module|go|toolchain|require|replace|exclude|retract)\b(.*)$/)
+    if (directiveMatch) {
+      directives.push({
+        keyword: directiveMatch[1],
+        text: stripped,
+        line: index + 1
+      })
+    }
+  })
+
+  return directives
+}
+
+function stripGoModComment(line: string): string {
+  let quote: '"' | undefined
+
+  for (let index = 0; index < line.length; index += 1) {
+    const current = line[index]
+    const previous = line[index - 1]
+
+    if (current === '"' && previous !== '\\') {
+      quote = quote ? undefined : '"'
+      continue
+    }
+
+    if (!quote && current === '/' && line[index + 1] === '/') {
+      return line.slice(0, index)
+    }
+  }
+
+  return line
+}
+
+function hasGoPseudoVersion(value: string): boolean {
+  return /\bv\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?-\d{14}-[a-f0-9]{12}\b/i.test(value)
 }
 
 function checkRust(context: FileContext): Finding[] {
@@ -814,23 +903,127 @@ function checkRust(context: FileContext): Finding[] {
     )
   }
 
-  context.lines.forEach((line, index) => {
-    if (line.includes('git =') && !/\brev\s*=\s*["'][a-f0-9]{40}["']/i.test(line)) {
+  for (const dependency of parseRustDependencyEntries(context.lines)) {
+    if (
+      /\bgit\s*=/.test(dependency.text) &&
+      !/\brev\s*=\s*["'][a-f0-9]{40}["']/i.test(dependency.text)
+    ) {
       findings.push(
         finding(
           'rust/git-rev-sha',
           'rust',
           context.file,
-          index + 1,
+          dependency.line,
           'high',
-          `Rust git dependency '${line.trim()}' does not pin a rev commit SHA.`,
+          `Rust git dependency '${dependency.text}' does not pin a rev commit SHA.`,
           'Add rev = "<40-character commit SHA>" to git dependencies.'
         )
       )
     }
-  })
+  }
 
   return findings
+}
+
+function parseRustDependencyEntries(lines: string[]): RustDependencyEntry[] {
+  const entries: RustDependencyEntry[] = []
+  let section = ''
+  let active:
+    | {
+        name: string
+        text: string
+        line: number
+        braceDepth: number
+      }
+    | undefined
+
+  lines.forEach((line, index) => {
+    const stripped = stripTomlComment(line).trim()
+    if (!stripped) {
+      return
+    }
+
+    const sectionMatch = stripped.match(/^\[([^\]]+)\]$/)
+    if (sectionMatch && !active) {
+      section = sectionMatch[1]
+      return
+    }
+
+    if (active) {
+      active.text = `${active.text} ${stripped}`.replace(/\s+/g, ' ')
+      active.braceDepth += braceDelta(stripped)
+      if (active.braceDepth <= 0) {
+        entries.push({
+          name: active.name,
+          text: active.text,
+          line: active.line
+        })
+        active = undefined
+      }
+      return
+    }
+
+    if (!isRustDependencySection(section)) {
+      return
+    }
+
+    const assignment = stripped.match(/^([A-Za-z0-9_.-]+)\s*=\s*(.+)$/)
+    if (!assignment) {
+      return
+    }
+
+    const text = stripped.replace(/\s+/g, ' ')
+    const depth = braceDelta(stripped)
+    if (depth > 0) {
+      active = {
+        name: assignment[1],
+        text,
+        line: index + 1,
+        braceDepth: depth
+      }
+      return
+    }
+
+    entries.push({
+      name: assignment[1],
+      text,
+      line: index + 1
+    })
+  })
+
+  return entries
+}
+
+function isRustDependencySection(section: string): boolean {
+  return (
+    section === 'dependencies' ||
+    section === 'dev-dependencies' ||
+    section === 'build-dependencies' ||
+    section === 'workspace.dependencies' ||
+    /^target\.[^.]+(?:\.[^.]+)*\.(?:dependencies|dev-dependencies|build-dependencies)$/.test(
+      section
+    )
+  )
+}
+
+function stripTomlComment(line: string): string {
+  let quote: '"' | "'" | undefined
+
+  for (let index = 0; index < line.length; index += 1) {
+    const current = line[index]
+    const previous = line[index - 1]
+
+    if ((current === '"' || current === "'") && previous !== '\\') {
+      quote = quote === current ? undefined : current
+      continue
+    }
+
+    if (!quote && current === '#') {
+      return line.slice(0, index)
+    }
+  }
+
+  return line
 }
 
 function checkJvm(context: FileContext): Finding[] {
@@ -884,23 +1077,129 @@ function checkRuby(context: FileContext): Finding[] {
     )
   }
 
-  context.lines.forEach((line, index) => {
-    if (line.includes('git:') && !/ref:\s*['"][a-f0-9]{40}['"]/i.test(line)) {
+  for (const gem of parseRubyGemEntries(context.lines)) {
+    if (/\bgit:/.test(gem.text) && !/\bref:\s*['"][a-f0-9]{40}['"]/i.test(gem.text)) {
       findings.push(
         finding(
           'ruby/git-ref-sha',
           'ruby',
           context.file,
-          index + 1,
+          gem.line,
           'high',
-          `Ruby git dependency '${line.trim()}' does not pin a ref commit SHA.`,
+          `Ruby git dependency '${gem.text}' does not pin a ref commit SHA.`,
           'Add ref: "<40-character commit SHA>" to git dependencies.'
         )
       )
     }
-  })
+  }
 
   return findings
+}
+
+function parseRubyGemEntries(lines: string[]): RubyGemEntry[] {
+  const entries: RubyGemEntry[] = []
+  let active:
+    | {
+        text: string
+        line: number
+        parenDepth: number
+      }
+    | undefined
+
+  lines.forEach((line, index) => {
+    const stripped = stripRubyComment(line).trim()
+    if (!stripped) {
+      return
+    }
+
+    if (active) {
+      active.text = `${active.text} ${stripped}`.replace(/\s+/g, ' ')
+      active.parenDepth += parenDelta(stripped)
+      if (active.parenDepth <= 0 && !/,\s*$/.test(stripped)) {
+        entries.push({
+          text: active.text,
+          line: active.line
+        })
+        active = undefined
+      }
+      return
+    }
+
+    if (!/^gem(?:\s+|\()/.test(stripped)) {
+      return
+    }
+
+    const parenDepth = parenDelta(stripped)
+    if (parenDepth > 0 || /,\s*$/.test(stripped)) {
+      active = {
+        text: stripped,
+        line: index + 1,
+        parenDepth
+      }
+      return
+    }
+
+    entries.push({
+      text: stripped,
+      line: index + 1
+    })
+  })
+
+  if (active) {
+    entries.push({
+      text: active.text,
+      line: active.line
+    })
+  }
+
+  return entries
+}
+
+function stripRubyComment(line: string): string {
+  let quote: '"' | "'" | undefined
+
+  for (let index = 0; index < line.length; index += 1) {
+    const current = line[index]
+    const previous = line[index - 1]
+
+    if ((current === '"' || current === "'") && previous !== '\\') {
+      quote = quote === current ? undefined : current
+      continue
+    }
+
+    if (!quote && current === '#') {
+      return line.slice(0, index)
+    }
+  }
+
+  return line
+}
+
+function parenDelta(line: string): number {
+  let quote: '"' | "'" | undefined
+  let delta = 0
+
+  for (let index = 0; index < line.length; index += 1) {
+    const current = line[index]
+    const previous = line[index - 1]
+
+    if ((current === '"' || current === "'") && previous !== '\\') {
+      quote = quote === current ? undefined : current
+      continue
+    }
+
+    if (quote) {
+      continue
+    }
+
+    if (current === '(') {
+      delta += 1
+    } else if (current === ')') {
+      delta -= 1
+    }
+  }
+
+  return delta
 }
 
 function isWorkflowOrActionFile(file: string): boolean {

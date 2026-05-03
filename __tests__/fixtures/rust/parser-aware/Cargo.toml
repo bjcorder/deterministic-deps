@@ -1,0 +1,16 @@
+[package]
+name = "parser-aware"
+version = "0.1.0"
+
+[dependencies]
+# commented = { git = "https://github.com/acme/commented.git", branch = "main" }
+serde = "1"
+floating = { git = "https://github.com/acme/floating.git", tag = "v1.0.0" }
+pinned = { git = "https://github.com/acme/pinned.git", rev = "0123456789abcdef0123456789abcdef01234567" }
+multiline = {
+  git = "https://github.com/acme/multiline.git",
+  branch = "main",
+}
+
+[workspace.dependencies]
+workspace-floating = { git = "https://github.com/acme/workspace-floating.git", branch = "main" }

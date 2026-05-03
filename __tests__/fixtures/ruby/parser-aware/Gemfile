@@ -1,0 +1,18 @@
+source 'https://rubygems.org'
+
+# gem 'commented', git: 'https://github.com/acme/commented.git', branch: 'main'
+gem 'rails'
+gem 'floating',
+  git: 'https://github.com/acme/floating.git',
+  branch: 'main'
+gem('tagged',
+  git: 'https://github.com/acme/tagged.git',
+  tag: 'v1.0.0'
+)
+gem 'pinned',
+  git: 'https://github.com/acme/pinned.git',
+  ref: '0123456789abcdef0123456789abcdef01234567'
+
+group :development do
+  gem 'grouped', git: 'https://github.com/acme/grouped.git', branch: 'main'
+end

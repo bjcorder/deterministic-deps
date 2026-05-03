@@ -46,14 +46,14 @@ Local `./` and `../` actions are allowed.
 | Rule                 | Severity | Behavior                                        |
 | -------------------- | -------- | ----------------------------------------------- |
 | `go/sum-required`    | high     | `go.mod` requires `go.sum`.                     |
-| `go/git-replace-sha` | medium   | Git-like replacement directives must not float. |
+| `go/git-replace-sha` | medium   | Git-like `replace` directives must use immutable pseudo-versions or commit refs. |
 
 ## Rust
 
 | Rule                     | Severity | Behavior                                                                           |
 | ------------------------ | -------- | ---------------------------------------------------------------------------------- |
 | `rust/lockfile-required` | high     | `Cargo.toml` requires `Cargo.lock` for deterministic application/workspace builds. |
-| `rust/git-rev-sha`       | high     | Git dependencies must include `rev = "<40-character commit SHA>"`.                 |
+| `rust/git-rev-sha`       | high     | Git dependencies in dependency tables must include `rev = "<40-character commit SHA>"`. |
 
 ## JVM
 
@@ -66,4 +66,4 @@ Local `./` and `../` actions are allowed.
 | Rule                     | Severity | Behavior                                                      |
 | ------------------------ | -------- | ------------------------------------------------------------- |
 | `ruby/lockfile-required` | high     | `Gemfile` requires `Gemfile.lock`.                            |
-| `ruby/git-ref-sha`       | high     | Git dependencies must use `ref: "<40-character commit SHA>"`. |
+| `ruby/git-ref-sha`       | high     | Gemfile git dependencies must use `ref: "<40-character commit SHA>"`. |

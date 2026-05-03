@@ -1,0 +1,23 @@
+[
+  {
+    "ruleId": "rust/git-rev-sha",
+    "ecosystem": "rust",
+    "file": "Cargo.toml",
+    "line": 8,
+    "severity": "high"
+  },
+  {
+    "ruleId": "rust/git-rev-sha",
+    "ecosystem": "rust",
+    "file": "Cargo.toml",
+    "line": 10,
+    "severity": "high"
+  },
+  {
+    "ruleId": "rust/git-rev-sha",
+    "ecosystem": "rust",
+    "file": "Cargo.toml",
+    "line": 16,
+    "severity": "high"
+  }
+]
