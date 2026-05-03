@@ -2,6 +2,8 @@
 
 Each finding includes a stable rule id, ecosystem, severity, file, line, message, and remediation.
 
+Some findings also include structured remediation suggestions. Safe exact-line suggestions appear in Markdown reports, SARIF `fixes`, and optional patch output. Suggestions are conservative and are only emitted when the deterministic replacement is already present in the scanned source.
+
 ## GitHub Actions
 
 | Rule                           | Severity | Behavior                                                                       |
@@ -54,6 +56,8 @@ Local `./` and `../` actions are allowed.
 | ------------------------ | -------- | --------------------------------------------------------------------------------------- |
 | `rust/lockfile-required` | high     | `Cargo.toml` requires `Cargo.lock` for deterministic application/workspace builds.      |
 | `rust/git-rev-sha`       | high     | Git dependencies in dependency tables must include `rev = "<40-character commit SHA>"`. |
+
+The Rust git revision rule can include a safe patch suggestion when a one-line dependency table already has a full commit SHA in the git URL, such as a `?rev=` query, but lacks the explicit Cargo `rev` field.
 
 ## JVM
 

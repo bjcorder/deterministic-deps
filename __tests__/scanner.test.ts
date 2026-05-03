@@ -484,4 +484,33 @@ describe('deterministic-deps scanner', () => {
     )
     expect(result.findings).toEqual([])
   })
+
+  it('adds safe remediation suggestions when an immutable replacement is already present', async () => {
+    const root = tempRepo()
+    const sha = '0123456789abcdef0123456789abcdef01234567'
+    write(
+      root,
+      'Cargo.toml',
+      ['[dependencies]', `demo = { git = "https://github.com/acme/demo.git?rev=${sha}" }`, ''].join(
+        '\n'
+      )
+    )
+    write(root, 'Cargo.lock', '# lock\n')
+
+    const result = await scan({ root, include: [], exclude: [], config: {} })
+
+    expect(result.findings).toEqual([
+      expect.objectContaining({
+        ruleId: 'rust/git-rev-sha',
+        suggestion: expect.objectContaining({
+          safeToApply: true,
+          confidence: 'high',
+          replacement: expect.objectContaining({
+            line: 2,
+            newText: `demo = { git = "https://github.com/acme/demo.git?rev=${sha}", rev = "${sha}" }`
+          })
+        })
+      })
+    ])
+  })
 })

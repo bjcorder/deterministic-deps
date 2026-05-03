@@ -44320,6 +44320,7 @@ function loadConfigWithDiagnostics(root, configPath) {
         config: {
             mode: readMode(raw, diagnostics),
             severityThreshold: readSeverity(raw, 'severity-threshold', diagnostics),
+            patch: readBoolean(raw, 'patch', diagnostics),
             remoteValidation: readBoolean(raw, 'remote-validation', diagnostics),
             remoteValidationTimeoutMs: readPositiveInteger(raw, 'remote-timeout-ms', diagnostics),
             remoteValidationRetries: readPositiveInteger(raw, 'remote-retries', diagnostics),
@@ -44639,6 +44640,7 @@ async function run() {
     const exclude = (0, config_1.splitPatterns)(core.getInput('exclude'));
     const sarifInput = core.getInput('sarif') || 'true';
     const sarif = sarifInput.toLowerCase() === 'true';
+    const patch = (0, config_1.normalizeBoolean)(core.getInput('patch'), config.patch ?? false);
     const remoteValidation = (0, config_1.normalizeBoolean)(core.getInput('remote-validation'), config.remoteValidation ?? false);
     const remoteValidationTimeoutMs = (0, config_1.normalizePositiveInteger)(core.getInput('remote-timeout-ms'), config.remoteValidationTimeoutMs ?? 5000);
     const remoteValidationRetries = (0, config_1.normalizePositiveInteger)(core.getInput('remote-retries'), config.remoteValidationRetries ?? 1);
@@ -44660,7 +44662,7 @@ async function run() {
             title: finding.ruleId
         });
     }
-    const reports = (0, report_1.writeReports)(scanRoot, result.findings, sarif);
+    const reports = (0, report_1.writeReports)(scanRoot, result.findings, sarif, patch);
     const counts = (0, report_1.countBySeverity)(result.findings);
     core.setOutput('finding-count', result.findings.length.toString());
     core.setOutput('high-count', counts.high.toString());
@@ -44668,6 +44670,7 @@ async function run() {
     core.setOutput('low-count', counts.low.toString());
     core.setOutput('report-path', reports.markdownPath);
     core.setOutput('sarif-path', reports.sarifPath ?? '');
+    core.setOutput('patch-path', reports.patchPath ?? '');
     await writeSummary(result.scannedFiles.length, result.findings.length, counts, reports.markdownPath);
     if (mode === 'enforce' && (0, rules_1.shouldReportFailure)(result.findings, severityThreshold)) {
         core.setFailed(`deterministic-deps found ${result.findings.length} finding(s) at or above ${severityThreshold} severity.`);
@@ -44929,6 +44932,7 @@ exports.countBySeverity = countBySeverity;
 exports.writeReports = writeReports;
 exports.renderMarkdown = renderMarkdown;
 exports.renderSarif = renderSarif;
+exports.renderPatch = renderPatch;
 const node_fs_1 = __importDefault(__nccwpck_require__(3024));
 const node_path_1 = __importDefault(__nccwpck_require__(6760));
 function countBySeverity(findings) {
@@ -44938,17 +44942,21 @@ function countBySeverity(findings) {
         low: findings.filter((finding) => finding.severity === 'low').length
     };
 }
-function writeReports(root, findings, writeSarif) {
+function writeReports(root, findings, writeSarif, writePatch = false) {
     const outputDir = node_path_1.default.join(root, 'deterministic-deps-report');
     node_fs_1.default.mkdirSync(outputDir, { recursive: true });
     const markdownPath = node_path_1.default.join(outputDir, 'report.md');
     node_fs_1.default.writeFileSync(markdownPath, renderMarkdown(findings), 'utf8');
+    const patchPath = writePatch ? node_path_1.default.join(outputDir, 'suggestions.patch') : undefined;
+    if (patchPath) {
+        node_fs_1.default.writeFileSync(patchPath, renderPatch(root, findings), 'utf8');
+    }
     if (!writeSarif) {
-        return { markdownPath };
+        return { markdownPath, patchPath };
     }
     const sarifPath = node_path_1.default.join(outputDir, 'deterministic-deps.sarif');
     node_fs_1.default.writeFileSync(sarifPath, JSON.stringify(renderSarif(findings), null, 2), 'utf8');
-    return { markdownPath, sarifPath };
+    return { markdownPath, sarifPath, patchPath };
 }
 function renderMarkdown(findings) {
     const counts = countBySeverity(findings);
@@ -44970,6 +44978,20 @@ function renderMarkdown(findings) {
     lines.push('| --- | --- | --- | --- | --- | --- |');
     for (const finding of findings) {
         lines.push(`| ${finding.severity} | ${finding.ruleId} | ${finding.ecosystem} | ${finding.file}:${finding.line} | ${escapeMarkdown(finding.message)} | ${escapeMarkdown(finding.remediation)} |`);
+    }
+    const suggestions = findings.filter((finding) => finding.suggestion);
+    if (suggestions.length > 0) {
+        lines.push('', '## Suggestions', '');
+        for (const finding of suggestions) {
+            const suggestion = finding.suggestion;
+            if (!suggestion) {
+                continue;
+            }
+            lines.push(`- ${finding.file}:${finding.line} ${escapeMarkdown(suggestion.title)} (confidence: ${suggestion.confidence}; safe patch: ${suggestion.safeToApply ? 'yes' : 'no'})`);
+            if (suggestion.replacement) {
+                lines.push(`  - Replace line ${suggestion.replacement.line} with: \`${escapeMarkdown(suggestion.replacement.newText)}\``);
+            }
+        }
     }
     lines.push('');
     return lines.join('\n');
@@ -44993,32 +45015,93 @@ function renderSarif(findings) {
                         rules
                     }
                 },
-                results: findings.map((finding) => ({
-                    ruleId: finding.ruleId,
-                    level: sarifLevel(finding.severity),
-                    message: {
-                        text: `${finding.message} ${finding.remediation}`
-                    },
-                    locations: [
-                        {
-                            physicalLocation: {
-                                artifactLocation: {
-                                    uri: finding.file
-                                },
-                                region: {
-                                    startLine: finding.line
+                results: findings.map((finding) => {
+                    const result = {
+                        ruleId: finding.ruleId,
+                        level: sarifLevel(finding.severity),
+                        message: {
+                            text: `${finding.message} ${finding.remediation}`
+                        },
+                        locations: [
+                            {
+                                physicalLocation: {
+                                    artifactLocation: {
+                                        uri: finding.file
+                                    },
+                                    region: {
+                                        startLine: finding.line
+                                    }
                                 }
                             }
+                        ],
+                        properties: {
+                            ecosystem: finding.ecosystem,
+                            severity: finding.severity
                         }
-                    ],
-                    properties: {
-                        ecosystem: finding.ecosystem,
-                        severity: finding.severity
+                    };
+                    const replacement = safeReplacement(finding);
+                    if (replacement) {
+                        result.fixes = [
+                            {
+                                description: {
+                                    text: finding.suggestion?.title ?? finding.remediation
+                                },
+                                artifactChanges: [
+                                    {
+                                        artifactLocation: {
+                                            uri: replacement.file
+                                        },
+                                        replacements: [
+                                            {
+                                                deletedRegion: {
+                                                    startLine: replacement.line,
+                                                    endLine: replacement.line
+                                                },
+                                                insertedContent: {
+                                                    text: `${replacement.newText}\n`
+                                                }
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ];
                     }
-                }))
+                    return result;
+                })
             }
         ]
     };
+}
+function renderPatch(root, findings) {
+    const replacements = findings
+        .map((finding) => safeReplacement(finding))
+        .filter((replacement) => Boolean(replacement))
+        .filter((replacement) => replacementMatchesFile(root, replacement));
+    if (replacements.length === 0) {
+        return '';
+    }
+    const lines = [];
+    for (const replacement of replacements) {
+        lines.push(`diff --git a/${replacement.file} b/${replacement.file}`, `--- a/${replacement.file}`, `+++ b/${replacement.file}`, `@@ -${replacement.line},1 +${replacement.line},1 @@`, `-${replacement.oldText}`, `+${replacement.newText}`);
+    }
+    lines.push('');
+    return lines.join('\n');
+}
+function safeReplacement(finding) {
+    const suggestion = finding.suggestion;
+    if (!suggestion?.safeToApply || !suggestion.replacement) {
+        return undefined;
+    }
+    return suggestion.replacement;
+}
+function replacementMatchesFile(root, replacement) {
+    const filePath = node_path_1.default.join(root, replacement.file);
+    if (!node_fs_1.default.existsSync(filePath)) {
+        return false;
+    }
+    const line = node_fs_1.default.readFileSync(filePath, 'utf8').split(/\r?\n/)[replacement.line - 1];
+    return line === replacement.oldText;
 }
 function sarifLevel(severity) {
     if (severity === 'high') {
@@ -45554,7 +45637,8 @@ function checkRust(context) {
     for (const dependency of parseRustDependencyEntries(context.lines)) {
         if (/\bgit\s*=/.test(dependency.text) &&
             !/\brev\s*=\s*["'][a-f0-9]{40}["']/i.test(dependency.text)) {
-            findings.push(finding('rust/git-rev-sha', 'rust', context.file, dependency.line, 'high', `Rust git dependency '${dependency.text}' does not pin a rev commit SHA.`, 'Add rev = "<40-character commit SHA>" to git dependencies.'));
+            const suggestion = rustRevSuggestion(context.file, dependency);
+            findings.push(finding('rust/git-rev-sha', 'rust', context.file, dependency.line, 'high', `Rust git dependency '${dependency.text}' does not pin a rev commit SHA.`, 'Add rev = "<40-character commit SHA>" to git dependencies.', suggestion));
         }
     }
     return findings;
@@ -45607,10 +45691,35 @@ function parseRustDependencyEntries(lines) {
         entries.push({
             name: assignment[1],
             text,
-            line: index + 1
+            line: index + 1,
+            lineText: line
         });
     });
     return entries;
+}
+function rustRevSuggestion(file, dependency) {
+    if (!dependency.lineText || dependency.text.includes('#')) {
+        return undefined;
+    }
+    const sha = /(?:[?&]rev=|#)([a-f0-9]{40})/i.exec(dependency.text)?.[1];
+    if (!sha || !/}\s*$/.test(dependency.lineText)) {
+        return undefined;
+    }
+    const newText = dependency.lineText.replace(/\s*}\s*$/, `, rev = "${sha}" }`);
+    if (newText === dependency.lineText) {
+        return undefined;
+    }
+    return {
+        title: `Add explicit Cargo rev '${sha}' from the existing git URL.`,
+        confidence: 'high',
+        safeToApply: true,
+        replacement: {
+            file,
+            line: dependency.line,
+            oldText: dependency.lineText,
+            newText
+        }
+    };
 }
 function isRustDependencySection(section) {
     return (section === 'dependencies' ||
@@ -46466,7 +46575,7 @@ function shouldReportFailure(findings, threshold) {
 function defaultExcludeMatchers() {
     return constants_1.DEFAULT_EXCLUDE.map((pattern) => new minimatch_1.Minimatch(pattern, { dot: true }));
 }
-function finding(ruleId, ecosystem, file, line, severity, message, remediation) {
+function finding(ruleId, ecosystem, file, line, severity, message, remediation, suggestion) {
     return {
         ruleId,
         ecosystem,
@@ -46474,7 +46583,8 @@ function finding(ruleId, ecosystem, file, line, severity, message, remediation) 
         line,
         severity,
         message,
-        remediation
+        remediation,
+        suggestion
     };
 }
 

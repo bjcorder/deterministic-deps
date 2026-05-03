@@ -5,6 +5,7 @@
 ```yaml
 mode: advisory
 severity-threshold: low
+patch: false
 remote-validation: false
 remote-timeout-ms: 5000
 remote-retries: 1
@@ -56,6 +57,7 @@ ecosystems:
 | -------------------- | ------------------------------------------------------------------------- |
 | `mode`               | `advisory` or `enforce`.                                                  |
 | `severity-threshold` | `low`, `medium`, or `high`; used only in enforce mode.                    |
+| `patch`              | Write a unified diff with safe remediation suggestions.                   |
 | `remote-validation`  | Opt in to remote validation of immutable GitHub commit refs.              |
 | `remote-timeout-ms`  | Per-request remote validation timeout in milliseconds.                    |
 | `remote-retries`     | Retry count for transient remote validation failures.                     |
@@ -76,6 +78,7 @@ Examples that warn and fall back:
 
 - `mode: report-only`
 - `severity-threshold: urgent`
+- `patch: maybe`
 - `remote-validation: yes`
 - `remote-timeout-ms: slow`
 - `include: '**/*.tf'`
@@ -103,3 +106,9 @@ Remote validation is disabled by default. Static checks still reject mutable ref
 When `remote-validation: true`, the scanner validates pinned GitHub Action refs and GitHub-hosted git dependency commit refs against the GitHub commits API. Missing commits produce `remote/github-ref` findings. Rate limits, timeouts, and other network failures produce `remote/validation-error` findings with deterministic messages instead of stack traces.
 
 Public GitHub commits can be checked without credentials. If `GITHUB_TOKEN` is available in the environment, it is sent to GitHub to support private repositories and higher rate limits. Enabling remote validation may disclose repository names and commit SHAs to GitHub and can add latency to CI runs.
+
+## Patch Output
+
+Patch output is disabled by default. Set `patch: true` or the `patch` action input to write `deterministic-deps-report/suggestions.patch` and expose its path as `patch-path`.
+
+Patch output never mutates repository files. It only includes suggestions marked safe for exact line replacement, and it skips a suggestion if the current file line no longer matches the finding metadata. Unsupported findings still appear in Markdown and SARIF reports without a patch hunk.

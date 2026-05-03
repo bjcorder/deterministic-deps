@@ -41,6 +41,7 @@ describe('configuration', () => {
       [
         'mode: sometimes',
         'severity-threshold: urgent',
+        'patch: maybe',
         'remote-validation: maybe',
         'remote-timeout-ms: slow',
         'remote-retries: -1',
@@ -71,6 +72,7 @@ describe('configuration', () => {
 
     expect(result.config.mode).toBeUndefined()
     expect(result.config.severityThreshold).toBeUndefined()
+    expect(result.config.patch).toBeUndefined()
     expect(result.config.remoteValidation).toBeUndefined()
     expect(result.config.remoteValidationTimeoutMs).toBeUndefined()
     expect(result.config.remoteValidationRetries).toBeUndefined()
@@ -84,6 +86,7 @@ describe('configuration', () => {
       expect.arrayContaining([
         "Invalid mode 'sometimes'; expected one of advisory, enforce.",
         "Invalid severity-threshold 'urgent'; expected one of low, medium, high.",
+        'Invalid patch; expected boolean true or false.',
         'Invalid remote-validation; expected boolean true or false.',
         'Invalid remote-timeout-ms; expected a non-negative integer.',
         'Invalid remote-retries; expected a non-negative integer.',
@@ -112,12 +115,19 @@ describe('configuration', () => {
     const root = tempRepo()
     fs.writeFileSync(
       path.join(root, '.deterministic-deps.yml'),
-      ['remote-validation: true', 'remote-timeout-ms: 2500', 'remote-retries: 2', ''].join('\n'),
+      [
+        'patch: true',
+        'remote-validation: true',
+        'remote-timeout-ms: 2500',
+        'remote-retries: 2',
+        ''
+      ].join('\n'),
       'utf8'
     )
 
     const config = loadConfig(root, '.deterministic-deps.yml')
 
+    expect(config.patch).toBe(true)
     expect(config.remoteValidation).toBe(true)
     expect(config.remoteValidationTimeoutMs).toBe(2500)
     expect(config.remoteValidationRetries).toBe(2)

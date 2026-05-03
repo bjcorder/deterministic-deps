@@ -29,6 +29,7 @@ async function run(): Promise<void> {
   const exclude = splitPatterns(core.getInput('exclude'))
   const sarifInput = core.getInput('sarif') || 'true'
   const sarif = sarifInput.toLowerCase() === 'true'
+  const patch = normalizeBoolean(core.getInput('patch'), config.patch ?? false)
   const remoteValidation = normalizeBoolean(
     core.getInput('remote-validation'),
     config.remoteValidation ?? false
@@ -62,7 +63,7 @@ async function run(): Promise<void> {
     })
   }
 
-  const reports = writeReports(scanRoot, result.findings, sarif)
+  const reports = writeReports(scanRoot, result.findings, sarif, patch)
   const counts = countBySeverity(result.findings)
 
   core.setOutput('finding-count', result.findings.length.toString())
@@ -71,6 +72,7 @@ async function run(): Promise<void> {
   core.setOutput('low-count', counts.low.toString())
   core.setOutput('report-path', reports.markdownPath)
   core.setOutput('sarif-path', reports.sarifPath ?? '')
+  core.setOutput('patch-path', reports.patchPath ?? '')
 
   await writeSummary(
     result.scannedFiles.length,
