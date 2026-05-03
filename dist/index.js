@@ -44236,6 +44236,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.ECOSYSTEM_OPTIONS = exports.VALID_MODES = exports.VALID_SEVERITIES = void 0;
 exports.splitPatterns = splitPatterns;
 exports.normalizeMode = normalizeMode;
 exports.normalizeModeInput = normalizeModeInput;
@@ -44250,9 +44251,9 @@ exports.loadConfigWithDiagnostics = loadConfigWithDiagnostics;
 const node_fs_1 = __importDefault(__nccwpck_require__(3024));
 const node_path_1 = __importDefault(__nccwpck_require__(6760));
 const js_yaml_1 = __importDefault(__nccwpck_require__(4281));
-const VALID_SEVERITIES = ['low', 'medium', 'high'];
-const VALID_MODES = ['advisory', 'enforce'];
-const ECOSYSTEM_OPTIONS = {
+exports.VALID_SEVERITIES = ['low', 'medium', 'high'];
+exports.VALID_MODES = ['advisory', 'enforce'];
+exports.ECOSYSTEM_OPTIONS = {
     go: ['requireGoSum'],
     jvm: ['allowDynamicVersionsWithGradleMetadata'],
     node: ['requireLockfile', 'allowVersionRangesWithLockfile'],
@@ -44287,7 +44288,7 @@ function normalizeModeInput(value, fallback = 'advisory', key = 'mode') {
         value: fallback,
         diagnostics: [
             {
-                message: `Invalid action input ${key} '${String(value)}'; expected one of ${VALID_MODES.join(', ')}. Falling back to ${fallback}.`
+                message: `Invalid action input ${key} '${String(value)}'; expected one of ${exports.VALID_MODES.join(', ')}. Falling back to ${fallback}.`
             }
         ]
     };
@@ -44309,7 +44310,7 @@ function normalizeSeverityInput(value, fallback = 'low', key = 'severity-thresho
         value: fallback,
         diagnostics: [
             {
-                message: `Invalid action input ${key} '${String(value)}'; expected one of ${VALID_SEVERITIES.join(', ')}. Falling back to ${fallback}.`
+                message: `Invalid action input ${key} '${String(value)}'; expected one of ${exports.VALID_SEVERITIES.join(', ')}. Falling back to ${fallback}.`
             }
         ]
     };
@@ -44437,7 +44438,7 @@ function readMode(raw, diagnostics) {
         return value;
     }
     diagnostics.push({
-        message: `Invalid mode '${String(value)}'; expected one of ${VALID_MODES.join(', ')}.`
+        message: `Invalid mode '${String(value)}'; expected one of ${exports.VALID_MODES.join(', ')}.`
     });
     return undefined;
 }
@@ -44450,7 +44451,7 @@ function readSeverity(raw, key, diagnostics) {
         return value;
     }
     diagnostics.push({
-        message: `Invalid ${key} '${String(value)}'; expected one of ${VALID_SEVERITIES.join(', ')}.`
+        message: `Invalid ${key} '${String(value)}'; expected one of ${exports.VALID_SEVERITIES.join(', ')}.`
     });
     return undefined;
 }
@@ -44530,7 +44531,7 @@ function readSeverityRecord(raw, diagnostics) {
         const valid = isSeverity(severity);
         if (!valid) {
             diagnostics.push({
-                message: `Invalid severity override '${String(severity)}'; expected one of ${VALID_SEVERITIES.join(', ')}.`
+                message: `Invalid severity override '${String(severity)}'; expected one of ${exports.VALID_SEVERITIES.join(', ')}.`
             });
         }
         return valid;
@@ -44579,10 +44580,10 @@ function readEcosystems(raw, diagnostics) {
             });
             continue;
         }
-        const knownOptions = ECOSYSTEM_OPTIONS[ecosystem];
+        const knownOptions = exports.ECOSYSTEM_OPTIONS[ecosystem];
         if (!knownOptions) {
             diagnostics.push({
-                message: `Unknown ecosystem '${ecosystem}'; known ecosystems are ${Object.keys(ECOSYSTEM_OPTIONS).join(', ')}.`
+                message: `Unknown ecosystem '${ecosystem}'; known ecosystems are ${Object.keys(exports.ECOSYSTEM_OPTIONS).join(', ')}.`
             });
             continue;
         }

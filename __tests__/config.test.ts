@@ -1,7 +1,12 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import Ajv2020 from 'ajv/dist/2020'
+import yaml from 'js-yaml'
 import {
+  ECOSYSTEM_OPTIONS,
+  VALID_MODES,
+  VALID_SEVERITIES,
   loadConfig,
   loadConfigWithDiagnostics,
   normalizeBooleanInput,
@@ -10,8 +15,36 @@ import {
   normalizeSeverityInput
 } from '../src/config'
 
+const schemaPath = path.join(__dirname, '..', 'docs', 'deterministic-deps.schema.json')
+const configurationDocsPath = path.join(__dirname, '..', 'docs', 'configuration.md')
+
 function tempRepo(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'deterministic-deps-config-'))
+}
+
+function configSchema(): Record<string, unknown> {
+  return JSON.parse(fs.readFileSync(schemaPath, 'utf8')) as Record<string, unknown>
+}
+
+function validateAgainstSchema(value: unknown): { valid: boolean; errors: string[] } {
+  const ajv = new Ajv2020({ allErrors: true })
+  const validate = ajv.compile(configSchema())
+  const valid = validate(value)
+
+  return {
+    valid,
+    errors: (validate.errors ?? []).map((error) => `${error.instancePath} ${error.message}`)
+  }
+}
+
+function configurationDocsExample(): unknown {
+  const docs = fs.readFileSync(configurationDocsPath, 'utf8')
+  const match = docs.match(/```yaml\n([\s\S]*?)\n```/)
+  if (!match) {
+    throw new Error('Unable to find YAML configuration example in docs/configuration.md')
+  }
+
+  return yaml.load(match[1])
 }
 
 describe('configuration', () => {
@@ -194,5 +227,79 @@ describe('configuration', () => {
       value: 0,
       diagnostics: []
     })
+  })
+
+  it('publishes a schema that accepts the documented configuration example', () => {
+    expect(validateAgainstSchema(configurationDocsExample())).toEqual({ valid: true, errors: [] })
+  })
+
+  it('publishes a schema that rejects common invalid configuration values', () => {
+    const invalidConfig = {
+      mode: 'sometimes',
+      'severity-threshold': 'urgent',
+      patch: 'maybe',
+      'remote-validation': 'yes',
+      'remote-timeout-ms': 'slow',
+      'remote-retries': -1,
+      include: '**/*.tf',
+      rules: {
+        'containers/image-digest': 'maybe'
+      },
+      severity: {
+        'node/non-deterministic-spec': 'loud'
+      },
+      allowlist: ['nope'],
+      ecosystems: {
+        node: {
+          requireLockfile: 'no',
+          typo: true
+        },
+        madeup: {
+          requireLockfile: true
+        }
+      },
+      unexpected: true
+    }
+
+    const result = validateAgainstSchema(invalidConfig)
+
+    expect(result.valid).toBe(false)
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        '/mode must be equal to one of the allowed values',
+        '/severity-threshold must be equal to one of the allowed values',
+        '/patch must be boolean',
+        '/remote-validation must be boolean',
+        '/remote-timeout-ms must be integer',
+        '/remote-retries must be >= 0',
+        '/include must be array',
+        '/rules/containers~1image-digest must be boolean',
+        '/severity/node~1non-deterministic-spec must be equal to one of the allowed values',
+        '/allowlist/0 must be object',
+        '/ecosystems/node/requireLockfile must be boolean',
+        '/ecosystems/node must NOT have additional properties',
+        '/ecosystems must NOT have additional properties',
+        ' must NOT have additional properties'
+      ])
+    )
+  })
+
+  it('keeps schema enums and ecosystem options aligned with parser constants', () => {
+    const schema = configSchema()
+    const properties = schema.properties as Record<string, Record<string, unknown>>
+    const definitions = schema.$defs as Record<string, Record<string, unknown>>
+    const ecosystemProperties = properties.ecosystems.properties as Record<string, { $ref: string }>
+
+    expect(properties.mode.enum).toEqual(VALID_MODES)
+    expect(definitions.severity.enum).toEqual(VALID_SEVERITIES)
+    expect(Object.keys(ecosystemProperties).sort()).toEqual(Object.keys(ECOSYSTEM_OPTIONS).sort())
+
+    for (const [ecosystem, options] of Object.entries(ECOSYSTEM_OPTIONS)) {
+      const reference = ecosystemProperties[ecosystem].$ref.replace('#/$defs/', '')
+      const optionSchema = definitions[reference]
+      expect(Object.keys(optionSchema.properties as Record<string, unknown>).sort()).toEqual(
+        [...options].sort()
+      )
+    }
   })
 })
