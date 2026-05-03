@@ -216,6 +216,25 @@ describe('golden reports', () => {
     expect(`${JSON.stringify(renderSarif(findings), null, 2)}\n`).toBe(expected)
   })
 
+  it('renders stable SARIF fingerprints for unchanged findings', () => {
+    const first = renderSarif(findings) as {
+      runs: Array<{ results: Array<{ partialFingerprints: Record<string, string> }> }>
+    }
+    const second = renderSarif(findings) as {
+      runs: Array<{ results: Array<{ partialFingerprints: Record<string, string> }> }>
+    }
+    const fingerprints = first.runs[0].results.map((result) => result.partialFingerprints)
+
+    expect(fingerprints).toEqual(second.runs[0].results.map((result) => result.partialFingerprints))
+    expect(fingerprints).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          primaryLocationLineHash: expect.stringMatching(/^[a-f0-9]{64}$/)
+        })
+      ])
+    )
+  })
+
   it('renders patch output for safe exact line replacements only', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'deterministic-deps-report-'))
     fs.writeFileSync(

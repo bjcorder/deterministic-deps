@@ -9,6 +9,11 @@
 
 Set `sarif: false` to skip SARIF generation. In that case, `sarif-path` is an empty string and any upload step should be guarded.
 
+SARIF rule metadata includes the rule description, default severity, ecosystem, and a `helpUri`
+that links to the relevant section of `docs/rules.md`. Results also include stable
+`partialFingerprints` derived from local finding fields so unchanged findings deduplicate more
+reliably in GitHub code scanning across repeated scans.
+
 ## Permissions
 
 Use GitHub's `github/codeql-action/upload-sarif` action to upload the generated SARIF to code scanning. The workflow needs:

@@ -44934,7 +44934,10 @@ exports.renderMarkdown = renderMarkdown;
 exports.renderSarif = renderSarif;
 exports.renderPatch = renderPatch;
 const node_fs_1 = __importDefault(__nccwpck_require__(3024));
+const node_crypto_1 = __importDefault(__nccwpck_require__(7598));
 const node_path_1 = __importDefault(__nccwpck_require__(6760));
+const rules_1 = __nccwpck_require__(5755);
+const RULES_HELP_URI = 'https://github.com/bjcorder/deterministic-deps/blob/main/docs/rules.md';
 function countBySeverity(findings) {
     return {
         high: findings.filter((finding) => finding.severity === 'high').length,
@@ -44997,12 +45000,7 @@ function renderMarkdown(findings) {
     return lines.join('\n');
 }
 function renderSarif(findings) {
-    const rules = Array.from(new Set(findings.map((finding) => finding.ruleId))).map((ruleId) => ({
-        id: ruleId,
-        shortDescription: {
-            text: ruleId
-        }
-    }));
+    const rules = Array.from(new Set(findings.map((finding) => finding.ruleId))).map(sarifRuleMetadata);
     return {
         version: '2.1.0',
         $schema: 'https://json.schemastore.org/sarif-2.1.0.json',
@@ -45034,6 +45032,7 @@ function renderSarif(findings) {
                                 }
                             }
                         ],
+                        partialFingerprints: sarifFingerprints(finding),
                         properties: {
                             ecosystem: finding.ecosystem,
                             severity: finding.severity
@@ -45072,6 +45071,58 @@ function renderSarif(findings) {
             }
         ]
     };
+}
+function sarifRuleMetadata(ruleId) {
+    const rule = rules_1.rules.find((candidate) => candidate.id === ruleId);
+    const description = rule?.description ?? ruleId;
+    return {
+        id: ruleId,
+        name: ruleId,
+        shortDescription: {
+            text: description
+        },
+        fullDescription: {
+            text: description
+        },
+        helpUri: rule ? ruleHelpUri(rule) : RULES_HELP_URI,
+        properties: {
+            ecosystem: rule?.ecosystem,
+            defaultSeverity: rule?.defaultSeverity
+        }
+    };
+}
+function ruleHelpUri(rule) {
+    return `${RULES_HELP_URI}#${ruleDocsAnchor(rule.ecosystem)}`;
+}
+function ruleDocsAnchor(ecosystem) {
+    const anchors = {
+        'github-actions': 'github-actions',
+        containers: 'containers',
+        terraform: 'terraform-and-opentofu',
+        node: 'nodejs',
+        python: 'python',
+        go: 'go',
+        rust: 'rust',
+        jvm: 'jvm',
+        ruby: 'ruby',
+        remote: 'remote-validation'
+    };
+    return anchors[ecosystem] ?? ecosystem.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+}
+function sarifFingerprints(finding) {
+    return {
+        primaryLocationLineHash: stableHash([
+            'deterministic-deps',
+            'v1',
+            finding.ruleId,
+            finding.file,
+            finding.line.toString(),
+            finding.message
+        ].join('\0'))
+    };
+}
+function stableHash(value) {
+    return node_crypto_1.default.createHash('sha256').update(value).digest('hex');
 }
 function renderPatch(root, findings) {
     const replacements = findings
