@@ -6,11 +6,26 @@ This repository publishes a packaged JavaScript action. The bundled `dist/index.
 
 1. Run `npm ci`.
 2. Run `npm run all`.
-3. Confirm `git diff --exit-code dist package-lock.json` is clean.
-4. Update `CHANGELOG.md`.
-5. Create a semantic version tag such as `v1.0.0`.
-6. Run the `v1 tag smoke` workflow against the semantic version tag.
-7. Move or create the major tag, such as `v1`, after the smoke test passes.
+3. Run `npm run format`.
+4. Confirm `git diff --exit-code dist package-lock.json` is clean.
+5. Confirm `git diff --check` is clean.
+6. Update `CHANGELOG.md` with the semantic version being released.
+7. Confirm `action.yml`, `README.md`, and `docs/` describe the same supported inputs, outputs,
+   ecosystems, and v1 limits.
+8. Dogfood the bundled action against this repository and expect zero findings.
+9. Merge the release-prep PR.
+
+## Tagging v1
+
+After the release-prep PR is merged:
+
+1. Check out the validated release commit on `main`.
+2. Create a semantic version tag such as `v1.0.0`.
+3. Push the semantic version tag.
+4. Run the `v1 tag smoke` workflow against the semantic version tag.
+5. Move or create the major tag, such as `v1`, after the smoke test passes.
+
+Do not create or move `v1` before the semantic tag smoke test passes.
 
 ## v1 Tag Smoke Test
 
@@ -52,6 +67,16 @@ without requiring any code changes after the tag exists.
    ```
 
 Do not move `v1` before the semantic tag smoke test passes.
+
+## Release Notes Checklist
+
+The `CHANGELOG.md` entry for a v1 release should identify:
+
+- Supported ecosystems.
+- Advisory and enforce modes.
+- Markdown, SARIF, count, and optional patch outputs.
+- Static-by-default behavior and the opt-in scope of remote validation.
+- Conservative remediation suggestions and known v1 limits.
 
 ## Versioning
 

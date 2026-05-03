@@ -47,7 +47,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - id: deterministic-deps
-        uses: bjcorder/deterministic-deps@<full-commit-sha>
+        uses: bjcorder/deterministic-deps@v1
         with:
           mode: advisory
           sarif: true
@@ -79,7 +79,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - id: deterministic-deps
-        uses: bjcorder/deterministic-deps@<full-commit-sha>
+        uses: bjcorder/deterministic-deps@v1
         continue-on-error: true
         with:
           mode: enforce
@@ -97,7 +97,9 @@ jobs:
 
 ## Pinning
 
-The examples above pin external actions to full commit SHAs. Replace `<full-commit-sha>` with the immutable commit for the version of `bjcorder/deterministic-deps` you want to run. Tags are convenient for quick experiments, but this project recommends commit SHA pinning for workflows you enforce.
+The examples above use the Marketplace `v1` tag for `deterministic-deps` and pin third-party
+actions to full commit SHAs. For workflows that enforce policy, pin `bjcorder/deterministic-deps` to
+the full commit SHA for the validated release behind `v1`.
 
 ## Private Repositories
 

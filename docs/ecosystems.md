@@ -1,6 +1,8 @@
 # Ecosystem Notes
 
-The action uses conservative static checks by default. It does not resolve remote refs, inspect package registries, or verify that a digest exists unless explicit remote validation is enabled.
+The action uses conservative static checks by default. It does not resolve remote refs, inspect
+package registries, or verify that container digests exist. Optional remote validation is limited to
+checking pinned GitHub commit refs.
 
 ## SHA and Digest Native Ecosystems
 

@@ -22,7 +22,7 @@ jobs:
       security-events: write
     steps:
       - uses: actions/checkout@<full-commit-sha>
-      - uses: bjcorder/deterministic-deps@<full-commit-sha>
+      - uses: bjcorder/deterministic-deps@v1
         with:
           mode: advisory
 ```
@@ -30,7 +30,7 @@ jobs:
 To fail builds once findings are actionable:
 
 ```yaml
-- uses: bjcorder/deterministic-deps@<full-commit-sha>
+- uses: bjcorder/deterministic-deps@v1
   with:
     mode: enforce
     severity-threshold: medium
@@ -57,7 +57,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - id: deterministic-deps
-        uses: bjcorder/deterministic-deps@<full-commit-sha>
+        uses: bjcorder/deterministic-deps@v1
         with:
           mode: advisory
           sarif: true
@@ -87,7 +87,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - id: deterministic-deps
-        uses: bjcorder/deterministic-deps@<full-commit-sha>
+        uses: bjcorder/deterministic-deps@v1
         continue-on-error: true
         with:
           mode: enforce
@@ -103,7 +103,10 @@ jobs:
         run: exit 1
 ```
 
-`<full-commit-sha>` is a placeholder for the immutable commit you want to run. See [docs/sarif.md](docs/sarif.md) for permissions, private repository notes, and report path details.
+The Marketplace entrypoint is `bjcorder/deterministic-deps@v1`. For workflows that enforce policy,
+pin to the full commit SHA for the validated release behind `v1`. See
+[docs/sarif.md](docs/sarif.md) for permissions, private repository notes, SARIF upload, and report
+path details.
 
 ## Inputs
 

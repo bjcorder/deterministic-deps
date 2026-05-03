@@ -9,7 +9,8 @@ npm ci
 npm run all
 ```
 
-Rules live in `src/rules.ts`, scanner/reporting code lives under `src/`, and tests live in `__tests__/`.
+Rules live in `src/rules/`, scanner/reporting code lives under `src/`, and tests live in
+`__tests__/`.
 
 ## Pull Requests
 
