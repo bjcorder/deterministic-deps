@@ -47,6 +47,14 @@ interface NodeLockfile {
   integrityDependencies: Set<string>
 }
 
+interface PythonDependencyEntry {
+  source: string
+  text: string
+  line: number
+  hasHash?: boolean
+  editable?: boolean
+}
+
 const handlers: RuleHandler[] = [
   checkGithubActions,
   checkDockerLikeFiles,
@@ -429,75 +437,314 @@ function checkPython(context: FileContext): Finding[] {
   }
 
   const findings: Finding[] = []
-  context.lines.forEach((line, index) => {
-    const trimmed = line.trim()
-    if (
-      !trimmed ||
-      trimmed.startsWith('#') ||
-      trimmed.startsWith('-r ') ||
-      trimmed.startsWith('--')
-    ) {
-      return
-    }
-
-    if (isGitReference(trimmed) && !hasCommitReference(trimmed)) {
+  for (const requirement of parseRequirementsEntries(context.lines)) {
+    if (isPythonGitDependency(requirement.text) && !hasCommitReference(requirement.text)) {
       findings.push(
         finding(
           'python/git-sha',
           'python',
           context.file,
-          index + 1,
+          requirement.line,
           'high',
-          `Python git dependency '${trimmed}' is not pinned to a commit SHA.`,
+          `Python git dependency '${requirement.text}' is not pinned to a commit SHA.`,
           'Use @<40-character commit SHA> for git dependencies.'
         )
       )
-      return
+      continue
     }
 
     if (
       ecosystemBoolean(context.config, 'python', 'requireRequirementHashes', true) &&
-      /[<>=~!]=/.test(trimmed) &&
-      (!/==[^=]/.test(trimmed) || !trimmed.includes('--hash='))
+      isHashableRequirement(requirement.text) &&
+      (!isExactPythonRequirement(requirement.text) || !requirement.hasHash)
     ) {
       findings.push(
         finding(
           'python/hash-pinned-requirement',
           'python',
           context.file,
-          index + 1,
+          requirement.line,
           'medium',
-          `Requirement '${trimmed}' is not exactly pinned with a hash.`,
+          `Requirement '${requirement.text}' is not exactly pinned with a hash.`,
           'Use exact == pins and --hash entries, for example from pip-compile --generate-hashes.'
         )
       )
     }
-  })
+  }
 
   return findings
 }
 
 function checkPythonProjectFile(context: FileContext): Finding[] {
+  const findings: Finding[] = []
   const directory = path.dirname(context.absolutePath)
   const locks = ['poetry.lock', 'uv.lock', 'Pipfile.lock']
+  const dependencies = context.file.endsWith('Pipfile')
+    ? parsePipfileDependencyEntries(context.lines)
+    : parsePyprojectDependencyEntries(context.lines)
+
   if (
-    !ecosystemBoolean(context.config, 'python', 'requireProjectLockfile', true) ||
-    locks.some((lock) => fs.existsSync(path.join(directory, lock)))
+    dependencies.length > 0 &&
+    ecosystemBoolean(context.config, 'python', 'requireProjectLockfile', true) &&
+    !locks.some((lock) => fs.existsSync(path.join(directory, lock)))
   ) {
-    return []
+    findings.push(
+      finding(
+        'python/lockfile-required',
+        'python',
+        context.file,
+        1,
+        'high',
+        `${path.basename(context.file)} was found without poetry.lock, uv.lock, or Pipfile.lock.`,
+        'Commit the ecosystem lockfile for Python project dependency declarations.'
+      )
+    )
   }
 
-  return [
-    finding(
-      'python/lockfile-required',
-      'python',
-      context.file,
-      1,
-      'high',
-      `${path.basename(context.file)} was found without poetry.lock, uv.lock, or Pipfile.lock.`,
-      'Commit the ecosystem lockfile for Python project dependency declarations.'
+  for (const dependency of dependencies) {
+    if (!isPythonGitDependency(dependency.text) || hasCommitReference(dependency.text)) {
+      continue
+    }
+
+    findings.push(
+      finding(
+        'python/git-sha',
+        'python',
+        context.file,
+        dependency.line,
+        'high',
+        `Python ${dependency.source} dependency '${dependency.text}' is not pinned to a commit SHA.`,
+        'Use a full 40-character commit SHA for git dependencies.'
+      )
     )
-  ]
+  }
+
+  return findings
+}
+
+function parseRequirementsEntries(lines: string[]): PythonDependencyEntry[] {
+  const entries: PythonDependencyEntry[] = []
+  let active = ''
+  let activeLine = 1
+
+  lines.forEach((line, index) => {
+    const withoutComment = stripPythonComment(line).trim()
+    if (!withoutComment) {
+      return
+    }
+
+    const continued = /\\\s*$/.test(withoutComment)
+    const segment = withoutComment.replace(/\\\s*$/, '').trim()
+    if (!active) {
+      activeLine = index + 1
+    }
+    active = [active, segment].filter(Boolean).join(' ')
+
+    if (continued) {
+      return
+    }
+
+    const normalized = active.replace(/\s+/g, ' ').trim()
+    active = ''
+
+    if (isRequirementsOptionOnly(normalized)) {
+      return
+    }
+
+    entries.push({
+      source: 'requirements',
+      text: normalized,
+      line: activeLine,
+      hasHash: /(?:^|\s)--hash[=\s]/.test(normalized),
+      editable: /^(-e|--editable)(?:\s|=)/.test(normalized)
+    })
+  })
+
+  if (active) {
+    entries.push({
+      source: 'requirements',
+      text: active.replace(/\s+/g, ' ').trim(),
+      line: activeLine,
+      hasHash: /(?:^|\s)--hash[=\s]/.test(active)
+    })
+  }
+
+  return entries
+}
+
+function parsePyprojectDependencyEntries(lines: string[]): PythonDependencyEntry[] {
+  const entries: PythonDependencyEntry[] = []
+  let section = ''
+  let multilineArray:
+    | {
+        source: string
+        line: number
+        text: string
+      }
+    | undefined
+
+  lines.forEach((line, index) => {
+    const trimmed = stripPythonComment(line).trim()
+    if (!trimmed) {
+      return
+    }
+
+    const sectionMatch = trimmed.match(/^\[([^\]]+)\]$/)
+    if (sectionMatch) {
+      section = sectionMatch[1]
+      return
+    }
+
+    if (multilineArray) {
+      multilineArray.text += ` ${trimmed}`
+      if (trimmed.includes(']')) {
+        entries.push(...pythonArrayEntries(multilineArray.text, multilineArray.source, multilineArray.line))
+        multilineArray = undefined
+      }
+      return
+    }
+
+    if (section === 'project' || section.startsWith('project.optional-dependencies')) {
+      const arrayMatch = trimmed.match(/^([A-Za-z0-9_.-]+)\s*=\s*(\[.*)$/)
+      if (arrayMatch && (arrayMatch[1] === 'dependencies' || section.includes('optional-dependencies'))) {
+        if (arrayMatch[2].includes(']')) {
+          entries.push(...pythonArrayEntries(arrayMatch[2], section, index + 1))
+        } else {
+          multilineArray = { source: section, line: index + 1, text: arrayMatch[2] }
+        }
+      }
+      return
+    }
+
+    if (isPoetryDependencySection(section)) {
+      const dependency = parseTomlDependencyAssignment(trimmed, section, index + 1)
+      if (dependency) {
+        entries.push(dependency)
+      }
+    }
+  })
+
+  return entries
+}
+
+function parsePipfileDependencyEntries(lines: string[]): PythonDependencyEntry[] {
+  const entries: PythonDependencyEntry[] = []
+  let section = ''
+
+  lines.forEach((line, index) => {
+    const trimmed = stripPythonComment(line).trim()
+    if (!trimmed) {
+      return
+    }
+
+    const sectionMatch = trimmed.match(/^\[([^\]]+)\]$/)
+    if (sectionMatch) {
+      section = sectionMatch[1]
+      return
+    }
+
+    if (section !== 'packages' && section !== 'dev-packages') {
+      return
+    }
+
+    const dependency = parseTomlDependencyAssignment(trimmed, `Pipfile ${section}`, index + 1)
+    if (dependency) {
+      entries.push(dependency)
+    }
+  })
+
+  return entries
+}
+
+function parseTomlDependencyAssignment(
+  line: string,
+  source: string,
+  lineNumber: number
+): PythonDependencyEntry | undefined {
+  const match = line.match(/^([A-Za-z0-9_.-]+)\s*=\s*(.+)$/)
+  if (!match) {
+    return undefined
+  }
+
+  return {
+    source,
+    text: `${match[1]} = ${match[2].trim()}`,
+    line: lineNumber
+  }
+}
+
+function pythonArrayEntries(
+  arrayText: string,
+  source: string,
+  fallbackLine: number
+): PythonDependencyEntry[] {
+  return Array.from(arrayText.matchAll(/["']([^"']+)["']/g), (match) => ({
+    source,
+    text: match[1],
+    line: fallbackLine
+  }))
+}
+
+function isPoetryDependencySection(section: string): boolean {
+  return (
+    section === 'tool.poetry.dependencies' ||
+    section === 'tool.poetry.dev-dependencies' ||
+    /^tool\.poetry\.group\.[^.]+\.dependencies$/.test(section)
+  )
+}
+
+function stripPythonComment(line: string): string {
+  let quote: '"' | "'" | undefined
+
+  for (let index = 0; index < line.length; index += 1) {
+    const current = line[index]
+    const previous = line[index - 1]
+
+    if ((current === '"' || current === "'") && previous !== '\\') {
+      quote = quote === current ? undefined : current
+      continue
+    }
+
+    if (!quote && current === '#') {
+      const previousCharacter = line[index - 1]
+      if (!previousCharacter || /\s/.test(previousCharacter)) {
+        return line.slice(0, index)
+      }
+    }
+  }
+
+  return line
+}
+
+function isRequirementsOptionOnly(requirement: string): boolean {
+  return (
+    /^(-r|--requirement|-c|--constraint)(?:\s|=)/.test(requirement) ||
+    /^--(?:index-url|extra-index-url|find-links|trusted-host|no-index|pre)(?:\s|=|$)/.test(
+      requirement
+    )
+  )
+}
+
+function isPythonGitDependency(requirement: string): boolean {
+  return (
+    isGitReference(requirement) ||
+    /\bgit\+/.test(requirement) ||
+    /\bgit\s*=/.test(requirement) ||
+    /\bvcs\s*=\s*["']git["']/.test(requirement)
+  )
+}
+
+function isHashableRequirement(requirement: string): boolean {
+  return (
+    !/^(-e|--editable)(?:\s|=)/.test(requirement) &&
+    !isPythonGitDependency(requirement) &&
+    !/\s@\s*(?:https?:|file:|git\+)/.test(requirement) &&
+    /[<>=~!]=/.test(requirement)
+  )
+}
+
+function isExactPythonRequirement(requirement: string): boolean {
+  return /(^|[A-Za-z0-9_.\]-])==[^=]/.test(requirement)
 }
 
 function checkGo(context: FileContext): Finding[] {

@@ -1,0 +1,9 @@
+[
+  {
+    "ruleId": "python/git-sha",
+    "ecosystem": "python",
+    "file": "Pipfile",
+    "line": 2,
+    "severity": "high"
+  }
+]

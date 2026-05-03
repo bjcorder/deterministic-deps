@@ -1,0 +1,2 @@
+[packages]
+acme = { git = "https://github.com/acme/pkg.git", branch = "main" }

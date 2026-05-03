@@ -16,6 +16,8 @@ GitHub Actions workflows, Compose files, and devcontainer JSON files are parsed 
 
 Node package manifests are parsed as JSON. The scanner evaluates `dependencies`, `devDependencies`, `peerDependencies`, `optionalDependencies`, string-valued `bundledDependencies`, `overrides`, `resolutions`, and `packageManager`. npm, Yarn, and pnpm lockfiles are parsed locally to confirm registry dependency coverage and integrity metadata. Git, GitHub shorthand, aliases, and URL/tarball specs are still checked for immutable commit or content-addressed references because a lockfile cannot make a floating source declaration safe for policy review.
 
+Python requirements files are parsed into logical entries before evaluation, including line continuations, comments, options, hashes, editable installs, extras, direct references, and environment markers. `pyproject.toml` dependency arrays, Poetry dependency groups, and Pipfile package sections are parsed conservatively for lockfile requirements and git SHA checks.
+
 ## Policy Options
 
 Projects can tune lockfile and hash requirements with the `ecosystems` config block. This is intended for cases like library repositories that intentionally do not commit application lockfiles, or repositories that accept registry version ranges when a package manager lockfile is present.

@@ -1,0 +1,7 @@
+[tool.poetry.dependencies]
+python = "^3.12"
+requests = "^2.32.0"
+acme = { git = "https://github.com/acme/pkg.git", branch = "main" }
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"

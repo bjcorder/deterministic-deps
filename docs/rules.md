@@ -38,7 +38,7 @@ Local `./` and `../` actions are allowed.
 | Rule                             | Severity | Behavior                                                                            |
 | -------------------------------- | -------- | ----------------------------------------------------------------------------------- |
 | `python/hash-pinned-requirement` | medium   | `requirements*.txt` entries should use exact `==` pins with `--hash=` entries.      |
-| `python/git-sha`                 | high     | Git dependencies must pin a commit SHA.                                             |
+| `python/git-sha`                 | high     | Git dependencies in requirements, `pyproject.toml`, and `Pipfile` must pin a commit SHA. |
 | `python/lockfile-required`       | high     | `pyproject.toml` and `Pipfile` require `poetry.lock`, `uv.lock`, or `Pipfile.lock`. |
 
 ## Go

@@ -1,0 +1,9 @@
+[
+  {
+    "ruleId": "python/hash-pinned-requirement",
+    "ecosystem": "python",
+    "file": "requirements.txt",
+    "line": 1,
+    "severity": "medium"
+  }
+]
