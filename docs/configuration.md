@@ -142,9 +142,11 @@ action and continues to warn and fall back for invalid individual fields.
 
 Remote validation is disabled by default. Static checks still reject mutable refs and accept values that look like full commit SHAs or digests without making network calls.
 
-When `remote-validation: true`, the scanner validates pinned GitHub Action refs and GitHub-hosted git dependency commit refs against the GitHub commits API. Missing commits produce `remote/github-ref` findings. Rate limits, timeouts, and other network failures produce `remote/validation-error` findings with deterministic messages instead of stack traces.
+When `remote-validation: true`, the scanner validates pinned GitHub Action refs and GitHub-hosted git dependency commit refs against the GitHub commits API. Missing commits produce `remote/github-ref` findings. Rate limits, timeouts, authorization failures, and other network failures produce `remote/validation-error` findings with deterministic messages instead of stack traces.
 
-Public GitHub commits can be checked without credentials. If `GITHUB_TOKEN` is available in the environment, it is sent to GitHub to support private repositories and higher rate limits. Enabling remote validation may disclose repository names and commit SHAs to GitHub and can add latency to CI runs.
+Remote validation supports GitHub.com and GitHub Enterprise Server. In GitHub Actions, the scanner uses `GITHUB_API_URL` for commit API requests and `GITHUB_SERVER_URL` to identify Git dependency URLs hosted by the current GitHub server. Outside GitHub Actions, it defaults to `https://api.github.com` and `https://github.com`; for GHES, set `GITHUB_SERVER_URL` and optionally `GITHUB_API_URL`.
+
+Public commits can be checked without credentials. If `GITHUB_TOKEN` is available in the environment, it is sent to the configured GitHub server to support private repositories and higher rate limits. Enabling remote validation may disclose repository names and commit SHAs to the configured GitHub server and can add latency to CI runs.
 
 ## Patch Output
 

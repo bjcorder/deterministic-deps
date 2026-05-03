@@ -22,6 +22,8 @@ describe('deterministic-deps scanner', () => {
   afterEach(() => {
     globalThis.fetch = originalFetch
     delete process.env.GITHUB_TOKEN
+    delete process.env.GITHUB_API_URL
+    delete process.env.GITHUB_SERVER_URL
   })
 
   it('flags broad non-deterministic dependency declarations', async () => {
@@ -480,6 +482,82 @@ describe('deterministic-deps scanner', () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       `https://api.github.com/repos/example/project/commits/${sha}`,
+      expect.objectContaining({ method: 'GET' })
+    )
+    expect(result.findings).toEqual([])
+  })
+
+  it('uses GitHub Enterprise API endpoints for action refs when configured', async () => {
+    const root = tempRepo()
+    const sha = '0123456789abcdef0123456789abcdef01234567'
+    const fetchMock = jest.fn().mockResolvedValue({ status: 200 })
+    globalThis.fetch = fetchMock
+    process.env.GITHUB_SERVER_URL = 'https://ghe.example.com'
+    process.env.GITHUB_API_URL = 'https://ghe.example.com/api/v3'
+    write(root, '.github/workflows/ci.yml', `steps:\n  - uses: platform/checkout@${sha}\n`)
+
+    const result = await scan({
+      root,
+      include: [],
+      exclude: [],
+      config: { remoteValidation: true, remoteValidationRetries: 0 }
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `https://ghe.example.com/api/v3/repos/platform/checkout/commits/${sha}`,
+      expect.objectContaining({ method: 'GET' })
+    )
+    expect(result.findings).toEqual([])
+  })
+
+  it('validates GitHub Enterprise git dependency URLs for the configured server', async () => {
+    const root = tempRepo()
+    const sha = '0123456789abcdef0123456789abcdef01234567'
+    const fetchMock = jest.fn().mockResolvedValue({ status: 200 })
+    globalThis.fetch = fetchMock
+    process.env.GITHUB_SERVER_URL = 'https://ghe.example.com'
+    process.env.GITHUB_API_URL = 'https://ghe.example.com/api/v3/'
+    write(
+      root,
+      'requirements.txt',
+      `example @ git+https://ghe.example.com/team/project.git@${sha}\n`
+    )
+
+    const result = await scan({
+      root,
+      include: [],
+      exclude: [],
+      config: { remoteValidation: true, remoteValidationRetries: 0 }
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `https://ghe.example.com/api/v3/repos/team/project/commits/${sha}`,
+      expect.objectContaining({ method: 'GET' })
+    )
+    expect(result.findings).toEqual([])
+  })
+
+  it('matches GitHub Enterprise git dependency URLs on configured nonstandard ports', async () => {
+    const root = tempRepo()
+    const sha = '0123456789abcdef0123456789abcdef01234567'
+    const fetchMock = jest.fn().mockResolvedValue({ status: 200 })
+    globalThis.fetch = fetchMock
+    process.env.GITHUB_SERVER_URL = 'https://ghe.example.com:8443'
+    write(
+      root,
+      'requirements.txt',
+      `example @ git+https://ghe.example.com:8443/team/project.git@${sha}\n`
+    )
+
+    const result = await scan({
+      root,
+      include: [],
+      exclude: [],
+      config: { remoteValidation: true, remoteValidationRetries: 0 }
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `https://ghe.example.com:8443/api/v3/repos/team/project/commits/${sha}`,
       expect.objectContaining({ method: 'GET' })
     )
     expect(result.findings).toEqual([])

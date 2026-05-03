@@ -78,6 +78,8 @@ The Rust git revision rule can include a safe patch suggestion when a one-line d
 
 Remote validation rules run only when `remote-validation` is enabled.
 
+Remote validation supports GitHub.com and GitHub Enterprise Server through the configured GitHub server API. It does not validate non-GitHub forges or container registry digests.
+
 | Rule                      | Severity | Behavior                                                                                           |
 | ------------------------- | -------- | -------------------------------------------------------------------------------------------------- |
 | `remote/github-ref`       | high     | A pinned GitHub commit SHA used by an action or GitHub-hosted git dependency could not be found.   |

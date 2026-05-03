@@ -149,7 +149,14 @@ V1 scans GitHub Actions, Docker and Compose files, devcontainers, Terraform/Open
 
 By default, the action is fully offline and only checks whether immutable refs are syntactically pinned. Set `remote-validation: true` to make GitHub API requests that confirm pinned GitHub Action SHAs and GitHub-hosted git dependency SHAs exist.
 
-Remote validation may reveal repository names and commit SHAs to GitHub, can be affected by API rate limits, and may be slower than static analysis. Public refs can be validated without credentials; when `GITHUB_TOKEN` is present, the action sends it to GitHub for higher rate limits and private repository access.
+Remote validation uses `GITHUB_API_URL` and `GITHUB_SERVER_URL` when present, so it supports
+GitHub.com and GitHub Enterprise Server from GitHub Actions runners. Outside GitHub Actions it
+defaults to `https://api.github.com` and `https://github.com`.
+
+Remote validation may reveal repository names and commit SHAs to the configured GitHub server, can
+be affected by API rate limits, and may be slower than static analysis. Public refs can be validated
+without credentials; when `GITHUB_TOKEN` is present, the action sends it to the configured GitHub
+server for higher rate limits and private repository access.
 
 ## Remediation Suggestions
 

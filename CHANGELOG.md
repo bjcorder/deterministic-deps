@@ -17,6 +17,8 @@ All notable changes to this project will be documented in this file.
 - Added diagnostics for malformed config, invalid config fields, and invalid direct action inputs
   with deterministic fallback behavior.
 - Added opt-in remote validation for pinned GitHub commit refs with bounded timeout/retry behavior.
+- Added GitHub Enterprise Server URL handling for opt-in remote validation through GitHub Actions
+  `GITHUB_API_URL` and `GITHUB_SERVER_URL` environment variables.
 - Added enriched SARIF metadata, rule documentation links, default severity metadata, and stable
   partial fingerprints for code scanning alerts.
 - Added release validation workflows, including a manual `v1 tag smoke` workflow for validating a

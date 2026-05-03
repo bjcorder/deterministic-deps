@@ -7,6 +7,7 @@ import { SHA_PATTERN } from './constants'
 import { Config, Finding } from './types'
 
 interface RemoteReference {
+  host: string
   owner: string
   repo: string
   sha: string
@@ -35,7 +36,8 @@ export async function validateRemoteReferences(
   const findings: Finding[] = []
 
   for (const reference of references) {
-    const key = `${reference.owner}/${reference.repo}@${reference.sha}`.toLowerCase()
+    const key =
+      `${reference.host}/${reference.owner}/${reference.repo}@${reference.sha}`.toLowerCase()
     let result = cache.get(key)
     if (!result) {
       result = await validateGithubCommit(reference.owner, reference.repo, reference.sha, config)
@@ -71,16 +73,21 @@ export async function validateRemoteReferences(
 function collectRemoteReferences(root: string, file: string): RemoteReference[] {
   const absolutePath = path.join(root, file)
   const content = fs.readFileSync(absolutePath, 'utf8')
-  const references = collectGithubUrlCommitReferences(file, content)
+  const serverHost = githubServerHost()
+  const references = collectGithubUrlCommitReferences(file, content, serverHost)
 
   if (/\.ya?ml$/i.test(file) && isWorkflowOrActionFile(file)) {
-    references.push(...collectGithubActionCommitReferences(file, content))
+    references.push(...collectGithubActionCommitReferences(file, content, serverHost))
   }
 
   return references
 }
 
-function collectGithubActionCommitReferences(file: string, content: string): RemoteReference[] {
+function collectGithubActionCommitReferences(
+  file: string,
+  content: string,
+  host: string
+): RemoteReference[] {
   const lines = content.split(/\r?\n/)
   const references = parseYamlDocuments(content).flatMap((document) =>
     collectStringProperties(document, 'uses')
@@ -112,6 +119,7 @@ function collectGithubActionCommitReferences(file: string, content: string): Rem
 
     return [
       {
+        host,
         owner: parts[0],
         repo: parts[1],
         sha,
@@ -123,14 +131,21 @@ function collectGithubActionCommitReferences(file: string, content: string): Rem
   })
 }
 
-function collectGithubUrlCommitReferences(file: string, content: string): RemoteReference[] {
+function collectGithubUrlCommitReferences(
+  file: string,
+  content: string,
+  host: string
+): RemoteReference[] {
   const references: RemoteReference[] = []
-  const pattern =
-    /github\.com[:/]([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?(?=[/#?@])(?:[^\s'"<>)]{0,200})?(?:[?#&]ref=|#|@)([a-f0-9]{40})/gi
+  const pattern = new RegExp(
+    `${escapeRegExp(host)}[:/]([A-Za-z0-9_.-]+)\\/([A-Za-z0-9_.-]+?)(?:\\.git)?(?=[/#?@])(?:[^\\s'"<>)]{0,200})?(?:[?#&]ref=|#|@)([a-f0-9]{40})`,
+    'gi'
+  )
 
   for (const match of content.matchAll(pattern)) {
     const index = match.index ?? 0
     references.push({
+      host,
       owner: match[1],
       repo: match[2],
       sha: match[3],
@@ -151,7 +166,7 @@ async function validateGithubCommit(
 ): Promise<ValidationResult> {
   const timeoutMs = config.remoteValidationTimeoutMs ?? DEFAULT_TIMEOUT_MS
   const retries = config.remoteValidationRetries ?? DEFAULT_RETRIES
-  const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${sha}`
+  const url = githubCommitApiUrl(owner, repo, sha)
 
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     const result = await fetchGithubCommit(url, timeoutMs)
@@ -165,6 +180,38 @@ async function validateGithubCommit(
   }
 
   return { status: 'error', message: 'validation retry loop exited unexpectedly' }
+}
+
+function githubCommitApiUrl(owner: string, repo: string, sha: string): string {
+  const apiBaseUrl = githubApiBaseUrl()
+  return `${apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${sha}`
+}
+
+function githubApiBaseUrl(): string {
+  const apiUrl = process.env.GITHUB_API_URL
+  if (apiUrl) {
+    return apiUrl.replace(/\/+$/, '')
+  }
+
+  const serverUrl = githubServerUrl()
+  if (serverUrl.hostname.toLowerCase() === 'github.com') {
+    return 'https://api.github.com'
+  }
+
+  return `${serverUrl.origin}/api/v3`
+}
+
+function githubServerHost(): string {
+  return githubServerUrl().host.toLowerCase()
+}
+
+function githubServerUrl(): URL {
+  const rawUrl = process.env.GITHUB_SERVER_URL || 'https://github.com'
+  try {
+    return new URL(rawUrl)
+  } catch {
+    return new URL('https://github.com')
+  }
 }
 
 async function fetchGithubCommit(url: string, timeoutMs: number): Promise<ValidationResult> {

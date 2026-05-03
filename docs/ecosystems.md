@@ -2,7 +2,7 @@
 
 The action uses conservative static checks by default. It does not resolve remote refs, inspect
 package registries, or verify that container digests exist. Optional remote validation is limited to
-checking pinned GitHub commit refs.
+checking pinned GitHub.com or GitHub Enterprise Server commit refs.
 
 ## SHA and Digest Native Ecosystems
 
@@ -46,13 +46,15 @@ The first supported safe patch is for one-line Cargo git dependencies that alrea
 
 Remote validation is opt in with `remote-validation: true`. When enabled, the scanner checks pinned GitHub Action SHAs and GitHub-hosted git dependency SHAs against the GitHub commits API. This distinguishes a syntactically immutable SHA from a SHA that GitHub can actually resolve.
 
-Remote validation does not clone repositories or resolve mutable tags. It uses bounded request timeouts and retries, reports missing refs as high-severity findings, and reports rate limits, authorization failures, timeouts, and transient API errors as low-severity validation errors. Public refs can be checked without credentials; `GITHUB_TOKEN` is used when present for private repository access and higher rate limits.
+Remote validation supports GitHub.com and GitHub Enterprise Server. The scanner uses `GITHUB_API_URL` when present, otherwise it uses `https://api.github.com` for GitHub.com and `<GITHUB_SERVER_URL>/api/v3` for GHES. Git dependency URL matching is limited to the configured `GITHUB_SERVER_URL` host, so remote validation does not attempt to validate refs from non-GitHub forges.
+
+Remote validation does not clone repositories or resolve mutable tags. It uses bounded request timeouts and retries, reports missing refs as high-severity findings, and reports rate limits, authorization failures, timeouts, and transient API errors as low-severity validation errors. Public refs can be checked without credentials; `GITHUB_TOKEN` is used when present for private repository access and higher rate limits on the configured GitHub server.
 
 ## Known Limits
 
 - The scanner avoids network calls unless `remote-validation` is enabled.
 - It does not parse every legal grammar branch for every package manager.
-- Remote validation currently checks GitHub commit refs only; container registry digest validation is not implemented.
+- Remote validation checks GitHub.com and GitHub Enterprise Server commit refs only; non-GitHub forges and container registry digest validation are not implemented.
 - Patch suggestions are intentionally limited to safe exact-line replacements and do not resolve newer refs or digests.
 - It may flag library repositories that intentionally omit lockfiles. Use `allowlist` or rule configuration for those cases.
 - Maven property resolution is limited to properties referenced directly from parsed version tags.
