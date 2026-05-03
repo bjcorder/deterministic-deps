@@ -31,6 +31,18 @@ inputs:
     description: Whether to write a SARIF report.
     required: false
     default: 'true'
+  remote-validation:
+    description: Opt in to remote validation of immutable GitHub commit references.
+    required: false
+    default: 'false'
+  remote-timeout-ms:
+    description: Per-request timeout for remote validation.
+    required: false
+    default: '5000'
+  remote-retries:
+    description: Retry count for transient remote validation failures.
+    required: false
+    default: '1'
 
 outputs:
   finding-count:

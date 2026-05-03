@@ -1,9 +1,12 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { afterEach } from '@jest/globals'
 import { renderMarkdown, renderSarif } from '../src/report'
 import { scan } from '../src/scanner'
 import { shouldReportFailure } from '../src/rules'
+
+const originalFetch = globalThis.fetch
 
 function tempRepo(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'deterministic-deps-'))
@@ -16,6 +19,11 @@ function write(root: string, file: string, content: string): void {
 }
 
 describe('deterministic-deps scanner', () => {
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    delete process.env.GITHUB_TOKEN
+  })
+
   it('flags broad non-deterministic dependency declarations', async () => {
     const root = tempRepo()
     write(root, '.github/workflows/ci.yml', 'steps:\n  - uses: actions/checkout@v4\n')
@@ -349,5 +357,131 @@ describe('deterministic-deps scanner', () => {
 
     expect(renderMarkdown(result.findings)).toContain('containers/image-digest')
     expect(JSON.stringify(renderSarif(result.findings))).toContain('deterministic-deps')
+  })
+
+  it('does not perform remote validation by default', async () => {
+    const root = tempRepo()
+    const sha = '0123456789abcdef0123456789abcdef01234567'
+    const fetchMock = jest.fn()
+    globalThis.fetch = fetchMock
+    write(root, '.github/workflows/ci.yml', `steps:\n  - uses: actions/checkout@${sha}\n`)
+
+    const result = await scan({ root, include: [], exclude: [], config: {} })
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(result.findings).toEqual([])
+  })
+
+  it('passes when remote validation finds GitHub Action SHAs', async () => {
+    const root = tempRepo()
+    const sha = '0123456789abcdef0123456789abcdef01234567'
+    const fetchMock = jest.fn().mockResolvedValue({ status: 200 })
+    globalThis.fetch = fetchMock
+    write(root, '.github/workflows/ci.yml', `steps:\n  - uses: actions/checkout@${sha}\n`)
+
+    const result = await scan({
+      root,
+      include: [],
+      exclude: [],
+      config: { remoteValidation: true, remoteValidationRetries: 0 }
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      `https://api.github.com/repos/actions/checkout/commits/${sha}`
+    )
+    expect(result.findings).toEqual([])
+  })
+
+  it('reports missing GitHub Action SHAs when remote validation is enabled', async () => {
+    const root = tempRepo()
+    const sha = 'ffffffffffffffffffffffffffffffffffffffff'
+    globalThis.fetch = jest.fn().mockResolvedValue({ status: 404 })
+    write(root, '.github/workflows/ci.yml', `steps:\n  - uses: actions/checkout@${sha}\n`)
+
+    const result = await scan({
+      root,
+      include: [],
+      exclude: [],
+      config: { remoteValidation: true, remoteValidationRetries: 0 }
+    })
+
+    expect(result.findings).toEqual([
+      expect.objectContaining({
+        ruleId: 'remote/github-ref',
+        ecosystem: 'remote',
+        severity: 'high',
+        file: '.github/workflows/ci.yml',
+        line: 2
+      })
+    ])
+  })
+
+  it('reports deterministic remote validation errors for rate limits', async () => {
+    const root = tempRepo()
+    const sha = '0123456789abcdef0123456789abcdef01234567'
+    globalThis.fetch = jest.fn().mockResolvedValue({ status: 403 })
+    write(root, '.github/workflows/ci.yml', `steps:\n  - uses: actions/checkout@${sha}\n`)
+
+    const result = await scan({
+      root,
+      include: [],
+      exclude: [],
+      config: { remoteValidation: true, remoteValidationRetries: 0 }
+    })
+
+    expect(result.findings).toEqual([
+      expect.objectContaining({
+        ruleId: 'remote/validation-error',
+        ecosystem: 'remote',
+        severity: 'low'
+      })
+    ])
+    expect(result.findings[0].message).toContain('GitHub API returned 403')
+  })
+
+  it('reports deterministic remote validation errors for network failures', async () => {
+    const root = tempRepo()
+    const sha = '0123456789abcdef0123456789abcdef01234567'
+    globalThis.fetch = jest.fn().mockRejectedValue(new Error('socket failed'))
+    write(root, '.github/workflows/ci.yml', `steps:\n  - uses: actions/checkout@${sha}\n`)
+
+    const result = await scan({
+      root,
+      include: [],
+      exclude: [],
+      config: { remoteValidation: true, remoteValidationRetries: 0 }
+    })
+
+    expect(result.findings).toEqual([
+      expect.objectContaining({
+        ruleId: 'remote/validation-error',
+        ecosystem: 'remote',
+        severity: 'low'
+      })
+    ])
+    expect(result.findings[0].message).toContain('socket failed')
+    expect(result.findings[0].message).not.toContain('Error:')
+  })
+
+  it('validates GitHub-hosted git dependency commit refs when enabled', async () => {
+    const root = tempRepo()
+    const sha = '0123456789abcdef0123456789abcdef01234567'
+    const fetchMock = jest.fn().mockResolvedValue({ status: 200 })
+    globalThis.fetch = fetchMock
+    write(root, 'requirements.txt', `example @ git+https://github.com/example/project.git@${sha}\n`)
+
+    const result = await scan({
+      root,
+      include: [],
+      exclude: [],
+      config: { remoteValidation: true, remoteValidationRetries: 0 }
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `https://api.github.com/repos/example/project/commits/${sha}`,
+      expect.objectContaining({ method: 'GET' })
+    )
+    expect(result.findings).toEqual([])
   })
 })

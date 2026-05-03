@@ -44239,6 +44239,8 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.splitPatterns = splitPatterns;
 exports.normalizeMode = normalizeMode;
 exports.normalizeSeverity = normalizeSeverity;
+exports.normalizeBoolean = normalizeBoolean;
+exports.normalizePositiveInteger = normalizePositiveInteger;
 exports.loadConfig = loadConfig;
 exports.loadConfigWithDiagnostics = loadConfigWithDiagnostics;
 const node_fs_1 = __importDefault(__nccwpck_require__(3024));
@@ -44276,6 +44278,26 @@ function normalizeSeverity(value, fallback = 'low') {
     }
     return fallback;
 }
+function normalizeBoolean(value, fallback) {
+    if (value === undefined || value === '') {
+        return fallback;
+    }
+    const normalized = value.toLowerCase();
+    if (normalized === 'true') {
+        return true;
+    }
+    if (normalized === 'false') {
+        return false;
+    }
+    return fallback;
+}
+function normalizePositiveInteger(value, fallback) {
+    if (value === undefined || value === '') {
+        return fallback;
+    }
+    const parsed = Number.parseInt(value, 10);
+    return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
+}
 function loadConfig(root, configPath) {
     return loadConfigWithDiagnostics(root, configPath).config;
 }
@@ -44298,6 +44320,9 @@ function loadConfigWithDiagnostics(root, configPath) {
         config: {
             mode: readMode(raw, diagnostics),
             severityThreshold: readSeverity(raw, 'severity-threshold', diagnostics),
+            remoteValidation: readBoolean(raw, 'remote-validation', diagnostics),
+            remoteValidationTimeoutMs: readPositiveInteger(raw, 'remote-timeout-ms', diagnostics),
+            remoteValidationRetries: readPositiveInteger(raw, 'remote-retries', diagnostics),
             include: readStringArray(raw, 'include', diagnostics),
             exclude: readStringArray(raw, 'exclude', diagnostics),
             rules: readBooleanRecord(raw, 'rules', diagnostics),
@@ -44352,6 +44377,32 @@ function readStringArray(raw, key, diagnostics) {
     }
     diagnostics.push({
         message: `Invalid ${key}; expected an array of strings.`
+    });
+    return undefined;
+}
+function readBoolean(raw, key, diagnostics) {
+    const value = raw[key];
+    if (value === undefined) {
+        return undefined;
+    }
+    if (typeof value === 'boolean') {
+        return value;
+    }
+    diagnostics.push({
+        message: `Invalid ${key}; expected boolean true or false.`
+    });
+    return undefined;
+}
+function readPositiveInteger(raw, key, diagnostics) {
+    const value = raw[key];
+    if (value === undefined) {
+        return undefined;
+    }
+    if (typeof value === 'number' && Number.isInteger(value) && value >= 0) {
+        return value;
+    }
+    diagnostics.push({
+        message: `Invalid ${key}; expected a non-negative integer.`
     });
     return undefined;
 }
@@ -44588,11 +44639,19 @@ async function run() {
     const exclude = (0, config_1.splitPatterns)(core.getInput('exclude'));
     const sarifInput = core.getInput('sarif') || 'true';
     const sarif = sarifInput.toLowerCase() === 'true';
+    const remoteValidation = (0, config_1.normalizeBoolean)(core.getInput('remote-validation'), config.remoteValidation ?? false);
+    const remoteValidationTimeoutMs = (0, config_1.normalizePositiveInteger)(core.getInput('remote-timeout-ms'), config.remoteValidationTimeoutMs ?? 5000);
+    const remoteValidationRetries = (0, config_1.normalizePositiveInteger)(core.getInput('remote-retries'), config.remoteValidationRetries ?? 1);
     const result = await (0, scanner_1.scan)({
         root: scanRoot,
         include: include.length > 0 ? include : (config.include ?? constants_1.DEFAULT_INCLUDE),
         exclude: exclude.length > 0 ? exclude : (config.exclude ?? constants_1.DEFAULT_EXCLUDE),
-        config
+        config: {
+            ...config,
+            remoteValidation,
+            remoteValidationTimeoutMs,
+            remoteValidationRetries
+        }
     });
     for (const finding of result.findings) {
         core.warning(`${finding.message} ${finding.remediation}`, {
@@ -44629,6 +44688,229 @@ async function writeSummary(scannedFiles, findingCount, counts, markdownPath) {
     catch (error) {
         core.warning(`Unable to write job summary: ${error instanceof Error ? error.message : String(error)}`);
     }
+}
+
+
+/***/ }),
+
+/***/ 6473:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.validateRemoteReferences = validateRemoteReferences;
+const node_fs_1 = __importDefault(__nccwpck_require__(3024));
+const node_path_1 = __importDefault(__nccwpck_require__(6760));
+const node_timers_1 = __nccwpck_require__(7997);
+const promises_1 = __nccwpck_require__(8500);
+const js_yaml_1 = __importDefault(__nccwpck_require__(4281));
+const constants_1 = __nccwpck_require__(7242);
+const DEFAULT_TIMEOUT_MS = 5000;
+const DEFAULT_RETRIES = 1;
+async function validateRemoteReferences(root, files, config) {
+    const references = dedupeRemoteReferences(files.flatMap((file) => collectRemoteReferences(root, file)));
+    const cache = new Map();
+    const findings = [];
+    for (const reference of references) {
+        const key = `${reference.owner}/${reference.repo}@${reference.sha}`.toLowerCase();
+        let result = cache.get(key);
+        if (!result) {
+            result = await validateGithubCommit(reference.owner, reference.repo, reference.sha, config);
+            cache.set(key, result);
+        }
+        if (result.status === 'missing') {
+            findings.push(remoteFinding('remote/github-ref', reference, 'high', `GitHub commit '${reference.sha}' for '${reference.owner}/${reference.repo}' could not be found.`, 'Confirm the repository and commit SHA, or update the reference to an existing immutable commit.'));
+        }
+        else if (result.status === 'error') {
+            findings.push(remoteFinding('remote/validation-error', reference, 'low', `Remote validation for '${reference.owner}/${reference.repo}@${reference.sha}' could not complete: ${result.message}.`, 'Retry later, adjust remote validation timeout/retry settings, or disable remote validation for offline/static-only runs.'));
+        }
+    }
+    return findings;
+}
+function collectRemoteReferences(root, file) {
+    const absolutePath = node_path_1.default.join(root, file);
+    const content = node_fs_1.default.readFileSync(absolutePath, 'utf8');
+    const references = collectGithubUrlCommitReferences(file, content);
+    if (/\.ya?ml$/i.test(file) && isWorkflowOrActionFile(file)) {
+        references.push(...collectGithubActionCommitReferences(file, content));
+    }
+    return references;
+}
+function collectGithubActionCommitReferences(file, content) {
+    const lines = content.split(/\r?\n/);
+    const references = parseYamlDocuments(content).flatMap((document) => collectStringProperties(document, 'uses'));
+    return references.flatMap((reference) => {
+        if (reference.startsWith('./') ||
+            reference.startsWith('../') ||
+            reference.startsWith('docker://')) {
+            return [];
+        }
+        const atIndex = reference.lastIndexOf('@');
+        if (atIndex === -1) {
+            return [];
+        }
+        const sha = reference.slice(atIndex + 1);
+        if (!constants_1.SHA_PATTERN.test(sha)) {
+            return [];
+        }
+        const parts = reference.slice(0, atIndex).split('/');
+        if (parts.length < 2) {
+            return [];
+        }
+        return [
+            {
+                owner: parts[0],
+                repo: parts[1],
+                sha,
+                file,
+                line: lineForYamlScalar(lines, 'uses', reference),
+                reference
+            }
+        ];
+    });
+}
+function collectGithubUrlCommitReferences(file, content) {
+    const references = [];
+    const pattern = /github\.com[:/]([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?(?=[/#?@])(?:[^\s'"<>)]{0,200})?(?:[?#&]ref=|#|@)([a-f0-9]{40})/gi;
+    for (const match of content.matchAll(pattern)) {
+        const index = match.index ?? 0;
+        references.push({
+            owner: match[1],
+            repo: match[2],
+            sha: match[3],
+            file,
+            line: lineNumberAt(content, index),
+            reference: match[0]
+        });
+    }
+    return references;
+}
+async function validateGithubCommit(owner, repo, sha, config) {
+    const timeoutMs = config.remoteValidationTimeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const retries = config.remoteValidationRetries ?? DEFAULT_RETRIES;
+    const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${sha}`;
+    for (let attempt = 0; attempt <= retries; attempt += 1) {
+        const result = await fetchGithubCommit(url, timeoutMs);
+        if (result.status === 'found' || result.status === 'missing') {
+            return result;
+        }
+        if (attempt === retries) {
+            return result;
+        }
+        await sleep(100 * (attempt + 1));
+    }
+    return { status: 'error', message: 'validation retry loop exited unexpectedly' };
+}
+async function fetchGithubCommit(url, timeoutMs) {
+    const controller = new AbortController();
+    const timeout = (0, node_timers_1.setTimeout)(() => controller.abort(), timeoutMs);
+    try {
+        const response = await globalThis.fetch(url, {
+            method: 'GET',
+            headers: githubHeaders(),
+            signal: controller.signal
+        });
+        if (response.status === 200) {
+            return { status: 'found' };
+        }
+        if (response.status === 404) {
+            return { status: 'missing' };
+        }
+        if (response.status === 403 || response.status === 429) {
+            return {
+                status: 'error',
+                message: `GitHub API returned ${response.status} (rate limited or forbidden)`
+            };
+        }
+        if (response.status >= 500) {
+            return { status: 'error', message: `GitHub API returned ${response.status}` };
+        }
+        return { status: 'error', message: `GitHub API returned ${response.status}` };
+    }
+    catch (error) {
+        return {
+            status: 'error',
+            message: error instanceof Error ? error.message : String(error)
+        };
+    }
+    finally {
+        (0, node_timers_1.clearTimeout)(timeout);
+    }
+}
+function githubHeaders() {
+    const headers = {
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'deterministic-deps'
+    };
+    const token = process.env.GITHUB_TOKEN;
+    if (token) {
+        headers.Authorization = `Bearer ${token}`;
+    }
+    return headers;
+}
+function remoteFinding(ruleId, reference, severity, message, remediation) {
+    return {
+        ruleId,
+        ecosystem: 'remote',
+        file: reference.file,
+        line: reference.line,
+        severity,
+        message: `${message} Reference: '${reference.reference}'.`,
+        remediation
+    };
+}
+function dedupeRemoteReferences(references) {
+    const seen = new Set();
+    return references.filter((reference) => {
+        const key = `${reference.file}:${reference.line}:${reference.owner}/${reference.repo}@${reference.sha}`.toLowerCase();
+        if (seen.has(key)) {
+            return false;
+        }
+        seen.add(key);
+        return true;
+    });
+}
+function parseYamlDocuments(content) {
+    try {
+        return js_yaml_1.default.loadAll(content);
+    }
+    catch {
+        return [];
+    }
+}
+function collectStringProperties(value, property) {
+    if (!value || typeof value !== 'object') {
+        return [];
+    }
+    if (Array.isArray(value)) {
+        return value.flatMap((entry) => collectStringProperties(entry, property));
+    }
+    return Object.entries(value).flatMap(([key, entry]) => {
+        const current = key === property && typeof entry === 'string' ? [entry] : [];
+        return [...current, ...collectStringProperties(entry, property)];
+    });
+}
+function lineForYamlScalar(lines, key, value) {
+    const escapedValue = escapeRegExp(value);
+    const pattern = new RegExp(`\\b${escapeRegExp(key)}:\\s*['"]?${escapedValue}['"]?`);
+    const index = lines.findIndex((line) => pattern.test(line));
+    return index === -1 ? 1 : index + 1;
+}
+function isWorkflowOrActionFile(file) {
+    return /^\.github\/workflows\/.+\.ya?ml$/i.test(file) || /(^|\/)action\.ya?ml$/i.test(file);
+}
+function lineNumberAt(content, index) {
+    return content.slice(0, index).split(/\r?\n/).length;
+}
+function escapeRegExp(value) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+function sleep(milliseconds) {
+    return (0, promises_1.setTimeout)(milliseconds);
 }
 
 
@@ -44764,6 +45046,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.evaluateFile = evaluateFile;
+exports.finalizeFindings = finalizeFindings;
 exports.shouldReportFailure = shouldReportFailure;
 exports.defaultExcludeMatchers = defaultExcludeMatchers;
 const node_fs_1 = __importDefault(__nccwpck_require__(3024));
@@ -44796,9 +45079,17 @@ function evaluateFile(root, file, config, trackedFiles) {
     return handlers
         .flatMap((handler) => handler(context))
         .map((finding) => applySeverityOverride(finding, config))
-        .filter((finding) => config.rules?.[finding.ruleId] !== false)
-        .filter((finding) => hasRequiredCompanionFile(finding, trackedFiles))
-        .filter((finding) => !isAllowlisted(finding, config));
+        .filter((finding) => shouldKeepFinding(finding, config, trackedFiles));
+}
+function finalizeFindings(findings, config, trackedFiles) {
+    return findings
+        .map((finding) => applySeverityOverride(finding, config))
+        .filter((finding) => shouldKeepFinding(finding, config, trackedFiles));
+}
+function shouldKeepFinding(finding, config, trackedFiles) {
+    return (config.rules?.[finding.ruleId] !== false &&
+        hasRequiredCompanionFile(finding, trackedFiles) &&
+        !isAllowlisted(finding, config));
 }
 function checkGithubActions(context) {
     if (!/\.ya?ml$/i.test(context.file) || !isWorkflowOrActionFile(context.file)) {
@@ -46205,13 +46496,17 @@ exports.resolveScanRoot = resolveScanRoot;
 const node_path_1 = __importDefault(__nccwpck_require__(6760));
 const glob_1 = __nccwpck_require__(8941);
 const constants_1 = __nccwpck_require__(7242);
+const remote_1 = __nccwpck_require__(6473);
 const rules_1 = __nccwpck_require__(9244);
 async function scan(options) {
     const files = await discoverFiles(options.root, options.include, options.exclude, options.config);
     const trackedFiles = new Set(files);
-    const findings = files.flatMap((file) => (0, rules_1.evaluateFile)(options.root, file, options.config, trackedFiles));
+    const staticFindings = files.flatMap((file) => (0, rules_1.evaluateFile)(options.root, file, options.config, trackedFiles));
+    const remoteFindings = options.config.remoteValidation === true
+        ? (0, rules_1.finalizeFindings)(await (0, remote_1.validateRemoteReferences)(options.root, files, options.config), options.config, trackedFiles)
+        : [];
     return {
-        findings,
+        findings: [...staticFindings, ...remoteFindings],
         scannedFiles: files
     };
 }
@@ -46458,6 +46753,14 @@ module.exports = require("node:string_decoder");
 
 "use strict";
 module.exports = require("node:timers");
+
+/***/ }),
+
+/***/ 8500:
+/***/ ((module) => {
+
+"use strict";
+module.exports = require("node:timers/promises");
 
 /***/ }),
 

@@ -1,6 +1,6 @@
 # Ecosystem Notes
 
-The action uses conservative static checks. It does not resolve remote refs, inspect package registries, or verify that a digest exists.
+The action uses conservative static checks by default. It does not resolve remote refs, inspect package registries, or verify that a digest exists unless explicit remote validation is enabled.
 
 ## SHA and Digest Native Ecosystems
 
@@ -32,10 +32,17 @@ Gradle Groovy and Kotlin build files are parsed for common dependency and plugin
 
 Projects can tune lockfile and hash requirements with the `ecosystems` config block. This is intended for cases like library repositories that intentionally do not commit application lockfiles, or repositories that accept registry version ranges when a package manager lockfile is present.
 
+## Remote Validation
+
+Remote validation is opt in with `remote-validation: true`. When enabled, the scanner checks pinned GitHub Action SHAs and GitHub-hosted git dependency SHAs against the GitHub commits API. This distinguishes a syntactically immutable SHA from a SHA that GitHub can actually resolve.
+
+Remote validation does not clone repositories or resolve mutable tags. It uses bounded request timeouts and retries, reports missing refs as high-severity findings, and reports rate limits, authorization failures, timeouts, and transient API errors as low-severity validation errors. Public refs can be checked without credentials; `GITHUB_TOKEN` is used when present for private repository access and higher rate limits.
+
 ## Known Limits
 
-- The scanner intentionally avoids network calls.
+- The scanner avoids network calls unless `remote-validation` is enabled.
 - It does not parse every legal grammar branch for every package manager.
+- Remote validation currently checks GitHub commit refs only; container registry digest validation is not implemented.
 - It may flag library repositories that intentionally omit lockfiles. Use `allowlist` or rule configuration for those cases.
 - Maven property resolution is limited to properties referenced directly from parsed version tags.
 
