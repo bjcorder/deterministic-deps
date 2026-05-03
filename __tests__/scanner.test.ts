@@ -155,6 +155,39 @@ describe('deterministic-deps scanner', () => {
     expect(allowed.findings).toEqual([])
   })
 
+  it('handles many dependency files while pruning nested default excludes', async () => {
+    const root = tempRepo()
+
+    for (let index = 0; index < 60; index += 1) {
+      write(
+        root,
+        `services/service-${index}/Dockerfile`,
+        `FROM alpine:3.20@sha256:${'a'.repeat(64)}\n`
+      )
+    }
+
+    for (const ignoredDirectory of ['.git', 'node_modules', 'dist', 'target', '.terraform']) {
+      write(
+        root,
+        `platform/${ignoredDirectory}/deeply/nested/package/Dockerfile`,
+        'FROM alpine:latest\n'
+      )
+      write(
+        root,
+        `platform/${ignoredDirectory}/deeply/nested/package/package.json`,
+        JSON.stringify({ dependencies: { leftpad: '^1.0.0' } }, null, 2)
+      )
+    }
+
+    const result = await scan({ root, include: [], exclude: [], config: {} })
+
+    expect(result.scannedFiles).toHaveLength(60)
+    expect(result.scannedFiles).toEqual(
+      Array.from({ length: 60 }, (_, index) => `services/service-${index}/Dockerfile`).sort()
+    )
+    expect(result.findings).toEqual([])
+  })
+
   it('honors ecosystem-specific policy options', async () => {
     const root = tempRepo()
     write(root, 'package.json', JSON.stringify({ dependencies: { leftpad: '^1.0.0' } }, null, 2))

@@ -73,6 +73,26 @@ ecosystems:
 
 Allowlist entries should be narrow and temporary. Prefer fixing declarations or adding lockfiles when practical.
 
+## Large Repositories
+
+Default discovery scans supported dependency declaration files and skips common generated or vendor
+directories, including `.git`, `node_modules`, `vendor`, `dist`, `build`, `target`, `.terraform`,
+virtualenvs, and `__pycache__`.
+
+For monorepos, narrow `include` to the ecosystems or package roots you want to evaluate, and add
+repository-specific generated paths to `exclude`. Prefer anchored patterns for known workspace
+layouts, such as:
+
+```yaml
+include:
+  - services/**/package.json
+  - infrastructure/**/*.tf
+
+exclude:
+  - services/**/fixtures/**
+  - tools/generated/**
+```
+
 ## Validation
 
 Malformed YAML fails the action with a clear parse error because the configured policy cannot be trusted. Invalid individual fields emit warnings and are ignored, so the action falls back to defaults or other valid config entries.
