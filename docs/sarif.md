@@ -2,10 +2,10 @@
 
 `deterministic-deps` writes a Markdown report and, by default, a SARIF report under `deterministic-deps-report/` in the scan root.
 
-| Output | Default path | Notes |
-| --- | --- | --- |
-| `report-path` | `deterministic-deps-report/report.md` | Always written. Also summarized in the GitHub Actions job summary. |
-| `sarif-path` | `deterministic-deps-report/deterministic-deps.sarif` | Written when `sarif: true`. Empty when SARIF generation is disabled. |
+| Output        | Default path                                         | Notes                                                                |
+| ------------- | ---------------------------------------------------- | -------------------------------------------------------------------- |
+| `report-path` | `deterministic-deps-report/report.md`                | Always written. Also summarized in the GitHub Actions job summary.   |
+| `sarif-path`  | `deterministic-deps-report/deterministic-deps.sarif` | Written when `sarif: true`. Empty when SARIF generation is disabled. |
 
 Set `sarif: false` to skip SARIF generation. In that case, `sarif-path` is an empty string and any upload step should be guarded.
 
