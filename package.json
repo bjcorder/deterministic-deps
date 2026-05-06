@@ -24,7 +24,7 @@
   "author": "Brian Corder",
   "license": "AGPL-3.0-only",
   "dependencies": {
-    "@actions/core": "1.11.1",
+    "@actions/core": "3.0.1",
     "glob": "13.0.6",
     "js-yaml": "4.1.1",
     "minimatch": "10.2.5"
