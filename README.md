@@ -229,3 +229,8 @@ The bundled `dist/index.js` is committed so the action can run directly from rep
 ## Security
 
 This action performs static analysis by default. It does not fetch package registries, clone dependency sources, or rewrite dependency declarations. Remote validation is explicit opt-in and limited to checking immutable GitHub commit refs. Please report vulnerabilities according to [SECURITY.md](SECURITY.md).
+
+## License
+
+deterministic-deps is licensed under the GNU Affero General Public License v3.0 only.
+Commercial licenses are available for proprietary embedding; contact Ozark Security Labs.

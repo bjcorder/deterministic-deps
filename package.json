@@ -22,7 +22,7 @@
     "sha-pinning"
   ],
   "author": "Brian Corder",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "dependencies": {
     "@actions/core": "1.11.1",
     "glob": "13.0.6",
