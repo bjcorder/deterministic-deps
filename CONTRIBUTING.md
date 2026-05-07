@@ -2,6 +2,20 @@
 
 Thanks for helping make dependency declarations more deterministic.
 
+## Contributor License Agreement
+
+Non-trivial contributions require agreement to the [Contributor License Agreement](CLA.md) before
+they can be merged. The CLA lets contributors keep ownership of their work while granting the
+project steward the rights needed to maintain the project, distribute it under open source licenses,
+and offer commercial licenses for proprietary embedding.
+
+If your employer or client may own your contribution, get written permission before submitting it.
+Maintainers may request an entity agreement or other authorization for company-owned work.
+
+Until an automated CLA check is configured, maintainers may ask contributors to acknowledge the CLA
+in a pull request comment. Signed CLA records may contain personal information and should not be
+committed to this repository.
+
 ## Development
 
 ```bash
