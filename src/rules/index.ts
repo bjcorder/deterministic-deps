@@ -196,6 +196,13 @@ export const rules: Rule[] = [
     checkRust
   ),
   rule(
+    'rust/toolchain-version',
+    'rust',
+    'medium',
+    'Rust toolchain files must avoid floating stable, beta, and nightly channels.',
+    checkRust
+  ),
+  rule(
     'jvm/dynamic-version',
     'jvm',
     'medium',
@@ -1055,6 +1062,10 @@ function hasGoPseudoVersion(value: string): boolean {
 }
 
 function checkRust(context: FileContext): Finding[] {
+  if (context.file.endsWith('rust-toolchain.toml')) {
+    return checkRustToolchain(context)
+  }
+
   if (!context.file.endsWith('Cargo.toml')) {
     return []
   }
@@ -1100,6 +1111,73 @@ function checkRust(context: FileContext): Finding[] {
   }
 
   return findings
+}
+
+function checkRustToolchain(context: FileContext): Finding[] {
+  const channel = parseRustToolchainChannel(context.lines)
+  if (!channel || !isFloatingRustToolchainChannel(channel.value)) {
+    return []
+  }
+
+  return [
+    finding(
+      'rust/toolchain-version',
+      'rust',
+      context.file,
+      channel.line,
+      'medium',
+      `Rust toolchain channel '${channel.value}' can change over time.`,
+      'Pin rust-toolchain.toml to an exact Rust version such as "1.78.0" or a dated nightly such as "nightly-2024-05-01".'
+    )
+  ]
+}
+
+function parseRustToolchainChannel(lines: string[]): { value: string; line: number } | undefined {
+  let section = ''
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const stripped = stripTomlComment(lines[index]).trim()
+    if (!stripped) {
+      continue
+    }
+
+    const sectionMatch = stripped.match(/^\[([^\]]+)\]$/)
+    if (sectionMatch) {
+      section = sectionMatch[1].trim()
+      continue
+    }
+
+    if (section !== 'toolchain') {
+      continue
+    }
+
+    const assignment = stripped.match(/^channel\s*=\s*(.+)$/)
+    if (!assignment) {
+      continue
+    }
+
+    const value = normalizeTomlScalar(assignment[1])
+    if (value) {
+      return { value, line: index + 1 }
+    }
+  }
+
+  return undefined
+}
+
+function normalizeTomlScalar(value: string): string | undefined {
+  const trimmed = value.trim().replace(/,$/, '').trim()
+  const quoted = trimmed.match(/^(['"])(.*)\1$/)
+  if (quoted) {
+    return quoted[2].trim()
+  }
+
+  const bare = trimmed.match(/^[A-Za-z0-9_.+-]+$/)
+  return bare ? trimmed : undefined
+}
+
+function isFloatingRustToolchainChannel(value: string): boolean {
+  return /^(stable|beta|nightly)$/i.test(value)
 }
 
 function parseRustDependencyEntries(lines: string[]): RustDependencyEntry[] {

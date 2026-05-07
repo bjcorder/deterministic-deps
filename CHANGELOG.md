@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 - Future versions of deterministic-deps are licensed under AGPL-3.0-only. Previous MIT-licensed
   releases remain available under their original terms.
+- Added Rust `rust-toolchain.toml` scanning for floating `stable`, `beta`, and `nightly`
+  toolchain channels.
 
 ## 1.0.0 - 2026-05-03
 

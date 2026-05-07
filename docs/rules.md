@@ -58,8 +58,13 @@ Local `./` and `../` actions are allowed.
 | ------------------------ | -------- | --------------------------------------------------------------------------------------- |
 | `rust/lockfile-required` | high     | `Cargo.toml` requires `Cargo.lock` for deterministic application/workspace builds.      |
 | `rust/git-rev-sha`       | high     | Git dependencies in dependency tables must include `rev = "<40-character commit SHA>"`. |
+| `rust/toolchain-version` | medium   | `rust-toolchain.toml` must not use floating `stable`, `beta`, or `nightly` channels.    |
 
 The Rust git revision rule can include a safe patch suggestion when a one-line dependency table already has a full commit SHA in the git URL, such as a `?rev=` query, but lacks the explicit Cargo `rev` field.
+
+Rust toolchain checks inspect the `[toolchain]` `channel` value in `rust-toolchain.toml`. Exact
+versions such as `1.78.0` and dated nightly toolchains such as `nightly-2024-05-01` are accepted.
+Malformed or unsupported TOML shapes are ignored rather than failing the scan.
 
 ## JVM
 

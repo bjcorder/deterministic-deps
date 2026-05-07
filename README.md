@@ -151,7 +151,7 @@ inputs; and non-negative integers for remote timeout and retry inputs.
 | Node.js                | npm, Yarn, and pnpm manifests and lockfiles.                                                   |
 | Python                 | `requirements*.txt`, `pyproject.toml`, Pipfile, Poetry, uv, and Pipenv lockfile coverage.      |
 | Go                     | `go.mod`, `go.sum`, and git-like replacement refs.                                             |
-| Rust                   | `Cargo.toml`, `Cargo.lock`, and git dependency revisions.                                      |
+| Rust                   | `Cargo.toml`, `Cargo.lock`, git dependency revisions, and `rust-toolchain.toml` channels.      |
 | JVM                    | Maven `pom.xml`, Gradle Groovy/Kotlin builds, and Gradle lock or verification metadata.        |
 | Ruby                   | Gemfile dependency refs and `Gemfile.lock` coverage.                                           |
 

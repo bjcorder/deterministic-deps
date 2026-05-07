@@ -44639,6 +44639,7 @@ exports.DEFAULT_INCLUDE = [
     '**/Pipfile',
     '**/go.mod',
     '**/Cargo.toml',
+    '**/rust-toolchain.toml',
     '**/pom.xml',
     '**/build.gradle',
     '**/build.gradle.kts',
@@ -45340,6 +45341,7 @@ exports.rules = [
     rule('go/git-replace-sha', 'go', 'medium', 'Go replace directives that use git sources require immutable refs.', checkGo),
     rule('rust/lockfile-required', 'rust', 'high', 'Cargo manifests require Cargo.lock for deterministic application builds.', checkRust),
     rule('rust/git-rev-sha', 'rust', 'high', 'Rust git dependencies must include full rev commit SHAs.', checkRust),
+    rule('rust/toolchain-version', 'rust', 'medium', 'Rust toolchain files must avoid floating stable, beta, and nightly channels.', checkRust),
     rule('jvm/dynamic-version', 'jvm', 'medium', 'Maven and Gradle declarations reject dynamic JVM versions unless supported Gradle metadata satisfies policy.', checkJvm),
     rule('ruby/lockfile-required', 'ruby', 'high', 'Gemfiles require Gemfile.lock for deterministic resolution.', checkRuby),
     rule('ruby/git-ref-sha', 'ruby', 'high', 'Ruby git dependencies must pin full ref commit SHAs.', checkRuby),
@@ -45826,6 +45828,9 @@ function hasGoPseudoVersion(value) {
     return /\bv\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?-\d{14}-[a-f0-9]{12}\b/i.test(value);
 }
 function checkRust(context) {
+    if (context.file.endsWith('rust-toolchain.toml')) {
+        return checkRustToolchain(context);
+    }
     if (!context.file.endsWith('Cargo.toml')) {
         return [];
     }
@@ -45843,6 +45848,53 @@ function checkRust(context) {
         }
     }
     return findings;
+}
+function checkRustToolchain(context) {
+    const channel = parseRustToolchainChannel(context.lines);
+    if (!channel || !isFloatingRustToolchainChannel(channel.value)) {
+        return [];
+    }
+    return [
+        finding('rust/toolchain-version', 'rust', context.file, channel.line, 'medium', `Rust toolchain channel '${channel.value}' can change over time.`, 'Pin rust-toolchain.toml to an exact Rust version such as "1.78.0" or a dated nightly such as "nightly-2024-05-01".')
+    ];
+}
+function parseRustToolchainChannel(lines) {
+    let section = '';
+    for (let index = 0; index < lines.length; index += 1) {
+        const stripped = stripTomlComment(lines[index]).trim();
+        if (!stripped) {
+            continue;
+        }
+        const sectionMatch = stripped.match(/^\[([^\]]+)\]$/);
+        if (sectionMatch) {
+            section = sectionMatch[1].trim();
+            continue;
+        }
+        if (section !== 'toolchain') {
+            continue;
+        }
+        const assignment = stripped.match(/^channel\s*=\s*(.+)$/);
+        if (!assignment) {
+            continue;
+        }
+        const value = normalizeTomlScalar(assignment[1]);
+        if (value) {
+            return { value, line: index + 1 };
+        }
+    }
+    return undefined;
+}
+function normalizeTomlScalar(value) {
+    const trimmed = value.trim().replace(/,$/, '').trim();
+    const quoted = trimmed.match(/^(['"])(.*)\1$/);
+    if (quoted) {
+        return quoted[2].trim();
+    }
+    const bare = trimmed.match(/^[A-Za-z0-9_.+-]+$/);
+    return bare ? trimmed : undefined;
+}
+function isFloatingRustToolchainChannel(value) {
+    return /^(stable|beta|nightly)$/i.test(value);
 }
 function parseRustDependencyEntries(lines) {
     const entries = [];
