@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+- Future versions of deterministic-deps are licensed under AGPL-3.0-only. Previous MIT-licensed
+  releases remain available under their original terms.
+
 ## 1.0.0 - 2026-05-03
 
 - Published the v1 GitHub Action interface for advisory and enforce modes.
