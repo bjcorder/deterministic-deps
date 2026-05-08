@@ -1,0 +1,17 @@
+name: ci
+on: pull_request
+jobs:
+  hosted:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567
+  custom:
+    runs-on: [self-hosted, linux, build-fleet]
+    steps:
+      - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567
+  group:
+    runs-on:
+      group: secure-runners
+      labels: ubuntu-latest
+    steps:
+      - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567

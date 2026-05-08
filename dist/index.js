@@ -45328,6 +45328,7 @@ exports.rules = [
     rule('github-actions/sha-pin', 'github-actions', 'high', 'External GitHub Actions references must use full commit SHA refs.', checkGithubActions),
     rule('github-actions/full-sha', 'github-actions', 'high', 'Short GitHub Actions SHAs are rejected because they are not explicit enough.', checkGithubActions),
     rule('github-actions/docker-digest', 'github-actions', 'high', 'Docker action references must include sha256 digests.', checkGithubActions),
+    rule('github-actions/versioned-runner', 'github-actions', 'medium', 'GitHub-hosted workflow runners must use versioned labels.', checkGithubActions),
     rule('containers/image-digest', 'containers', 'medium', 'Container image references should include immutable sha256 digests.', checkDockerLikeFiles),
     rule('terraform/git-module-sha', 'terraform', 'high', 'Terraform module git sources must use full commit SHA refs.', checkTerraform),
     rule('terraform/provider-lock', 'terraform', 'medium', 'Terraform provider constraints require exact versions or provider lockfiles.', checkTerraform),
@@ -45382,7 +45383,9 @@ function checkGithubActions(context) {
         return [];
     }
     const findings = [];
-    const references = parseYamlDocuments(context.content).flatMap((document) => collectStringProperties(document, 'uses'));
+    const documents = parseYamlDocuments(context.content);
+    const references = documents.flatMap((document) => collectStringProperties(document, 'uses'));
+    const runnerLabels = documents.flatMap((document) => collectStringOrStringArrayProperties(document, 'runs-on'));
     for (const reference of references) {
         const line = lineForYamlScalar(context.lines, 'uses', reference);
         const findingForReference = checkActionReference(context.file, line, reference);
@@ -45390,7 +45393,13 @@ function checkGithubActions(context) {
             findings.push(findingForReference);
         }
     }
-    if (references.length > 0) {
+    for (const runnerLabel of runnerLabels) {
+        const findingForRunner = checkRunnerLabel(context.file, lineForYamlScalar(context.lines, 'runs-on', runnerLabel), runnerLabel);
+        if (findingForRunner) {
+            findings.push(findingForRunner);
+        }
+    }
+    if (documents.length > 0) {
         return findings;
     }
     return checkGithubActionsWithLineFallback(context);
@@ -45415,15 +45424,55 @@ function checkActionReference(file, line, reference) {
     }
     return finding(constants_1.SHORT_SHA_PATTERN.test(ref) ? 'github-actions/full-sha' : 'github-actions/sha-pin', 'github-actions', file, line, 'high', `Action '${reference}' is pinned to '${ref}', not a full commit SHA.`, 'Replace branch, tag, or short SHA refs with a full 40-character commit SHA.');
 }
+function checkRunnerLabel(file, line, label) {
+    if (!isFloatingGithubHostedRunner(label)) {
+        return undefined;
+    }
+    return finding('github-actions/versioned-runner', 'github-actions', file, line, 'medium', `GitHub-hosted runner label '${label}' is floating.`, 'Use a versioned hosted runner label such as ubuntu-24.04, windows-2025, or macos-15.');
+}
+function isFloatingGithubHostedRunner(label) {
+    return /^(ubuntu|windows|macos)-latest$/i.test(label.trim());
+}
 function checkGithubActionsWithLineFallback(context) {
-    return context.lines.flatMap((line, index) => {
+    const findings = [];
+    context.lines.forEach((line, index) => {
         const usesMatch = line.match(/\buses:\s*['"]?([^'"\s#]+)['"]?/);
-        if (!usesMatch) {
-            return [];
+        if (usesMatch) {
+            const findingForReference = checkActionReference(context.file, index + 1, usesMatch[1]);
+            if (findingForReference) {
+                findings.push(findingForReference);
+            }
         }
-        const findingForReference = checkActionReference(context.file, index + 1, usesMatch[1]);
-        return findingForReference ? [findingForReference] : [];
+        for (const label of floatingRunnerLabelsInLine(line)) {
+            const findingForRunner = checkRunnerLabel(context.file, index + 1, label);
+            if (findingForRunner) {
+                findings.push(findingForRunner);
+            }
+        }
     });
+    return findings;
+}
+function floatingRunnerLabelsInLine(line) {
+    if (!/\bruns-on\s*:/.test(line)) {
+        return [];
+    }
+    const withoutComment = stripYamlLineComment(line);
+    return Array.from(withoutComment.matchAll(/['"]?\b((?:ubuntu|windows|macos)-latest)\b['"]?/gi), (match) => match[1]);
+}
+function stripYamlLineComment(line) {
+    let quote;
+    for (let index = 0; index < line.length; index += 1) {
+        const current = line[index];
+        const previous = line[index - 1];
+        if ((current === '"' || current === "'") && previous !== '\\') {
+            quote = quote === current ? undefined : current;
+            continue;
+        }
+        if (!quote && current === '#') {
+            return line.slice(0, index);
+        }
+    }
+    return line;
 }
 function checkDockerLikeFiles(context) {
     if (!isDockerLikeFile(context.file)) {
@@ -46364,6 +46413,22 @@ function collectStringProperties(value, propertyName) {
     const direct = typeof value[propertyName] === 'string' ? [value[propertyName]] : [];
     const nested = Object.values(value).flatMap((entry) => collectStringProperties(entry, propertyName));
     return [...direct, ...nested];
+}
+function collectStringOrStringArrayProperties(value, propertyName) {
+    if (Array.isArray(value)) {
+        return value.flatMap((entry) => collectStringOrStringArrayProperties(entry, propertyName));
+    }
+    if (!isRecord(value)) {
+        return [];
+    }
+    const direct = value[propertyName];
+    const directValues = typeof direct === 'string'
+        ? [direct]
+        : Array.isArray(direct)
+            ? direct.filter((entry) => typeof entry === 'string')
+            : [];
+    const nested = Object.values(value).flatMap((entry) => collectStringOrStringArrayProperties(entry, propertyName));
+    return [...directValues, ...nested];
 }
 function terraformBlocks(context) {
     const blocks = [];

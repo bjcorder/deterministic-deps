@@ -14,7 +14,7 @@ npm, Yarn, pnpm, Poetry, uv, Pipenv, Go, Rust, Bundler, Maven, and Gradle often 
 
 ## Parser Coverage
 
-GitHub Actions workflows, Compose files, and devcontainer JSON files are parsed before rules are evaluated so comments and unrelated text are ignored. Terraform/OpenTofu checks are block-aware for module sources and provider constraints.
+GitHub Actions workflows, Compose files, and devcontainer JSON files are parsed before rules are evaluated so comments and unrelated text are ignored. GitHub Actions checks include external action refs, Docker action image refs, and floating hosted runner labels in scalar or array `runs-on` values. Terraform/OpenTofu checks are block-aware for module sources and provider constraints.
 
 Rules are evaluated through a shared registry with per-rule metadata. Ecosystem parsers still share common helpers for YAML/JSON/TOML parsing, line lookup, SHA/digest detection, companion-file checks, severity overrides, and allowlists.
 

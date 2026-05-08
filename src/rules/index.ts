@@ -111,6 +111,13 @@ export const rules: Rule[] = [
     checkGithubActions
   ),
   rule(
+    'github-actions/versioned-runner',
+    'github-actions',
+    'medium',
+    'GitHub-hosted workflow runners must use versioned labels.',
+    checkGithubActions
+  ),
+  rule(
     'containers/image-digest',
     'containers',
     'medium',
@@ -290,8 +297,10 @@ function checkGithubActions(context: FileContext): Finding[] {
   }
 
   const findings: Finding[] = []
-  const references = parseYamlDocuments(context.content).flatMap((document) =>
-    collectStringProperties(document, 'uses')
+  const documents = parseYamlDocuments(context.content)
+  const references = documents.flatMap((document) => collectStringProperties(document, 'uses'))
+  const runnerLabels = documents.flatMap((document) =>
+    collectStringOrStringArrayProperties(document, 'runs-on')
   )
 
   for (const reference of references) {
@@ -302,7 +311,18 @@ function checkGithubActions(context: FileContext): Finding[] {
     }
   }
 
-  if (references.length > 0) {
+  for (const runnerLabel of runnerLabels) {
+    const findingForRunner = checkRunnerLabel(
+      context.file,
+      lineForYamlScalar(context.lines, 'runs-on', runnerLabel),
+      runnerLabel
+    )
+    if (findingForRunner) {
+      findings.push(findingForRunner)
+    }
+  }
+
+  if (documents.length > 0) {
     return findings
   }
 
@@ -359,16 +379,79 @@ function checkActionReference(file: string, line: number, reference: string): Fi
   )
 }
 
+function checkRunnerLabel(file: string, line: number, label: string): Finding | undefined {
+  if (!isFloatingGithubHostedRunner(label)) {
+    return undefined
+  }
+
+  return finding(
+    'github-actions/versioned-runner',
+    'github-actions',
+    file,
+    line,
+    'medium',
+    `GitHub-hosted runner label '${label}' is floating.`,
+    'Use a versioned hosted runner label such as ubuntu-24.04, windows-2025, or macos-15.'
+  )
+}
+
+function isFloatingGithubHostedRunner(label: string): boolean {
+  return /^(ubuntu|windows|macos)-latest$/i.test(label.trim())
+}
+
 function checkGithubActionsWithLineFallback(context: FileContext): Finding[] {
-  return context.lines.flatMap((line, index) => {
+  const findings: Finding[] = []
+
+  context.lines.forEach((line, index) => {
     const usesMatch = line.match(/\buses:\s*['"]?([^'"\s#]+)['"]?/)
-    if (!usesMatch) {
-      return []
+    if (usesMatch) {
+      const findingForReference = checkActionReference(context.file, index + 1, usesMatch[1])
+      if (findingForReference) {
+        findings.push(findingForReference)
+      }
     }
 
-    const findingForReference = checkActionReference(context.file, index + 1, usesMatch[1])
-    return findingForReference ? [findingForReference] : []
+    for (const label of floatingRunnerLabelsInLine(line)) {
+      const findingForRunner = checkRunnerLabel(context.file, index + 1, label)
+      if (findingForRunner) {
+        findings.push(findingForRunner)
+      }
+    }
   })
+
+  return findings
+}
+
+function floatingRunnerLabelsInLine(line: string): string[] {
+  if (!/\bruns-on\s*:/.test(line)) {
+    return []
+  }
+
+  const withoutComment = stripYamlLineComment(line)
+  return Array.from(
+    withoutComment.matchAll(/['"]?\b((?:ubuntu|windows|macos)-latest)\b['"]?/gi),
+    (match) => match[1]
+  )
+}
+
+function stripYamlLineComment(line: string): string {
+  let quote: '"' | "'" | undefined
+
+  for (let index = 0; index < line.length; index += 1) {
+    const current = line[index]
+    const previous = line[index - 1]
+
+    if ((current === '"' || current === "'") && previous !== '\\') {
+      quote = quote === current ? undefined : current
+      continue
+    }
+
+    if (!quote && current === '#') {
+      return line.slice(0, index)
+    }
+  }
+
+  return line
 }
 
 function checkDockerLikeFiles(context: FileContext): Finding[] {
@@ -1818,6 +1901,28 @@ function collectStringProperties(value: unknown, propertyName: string): string[]
     collectStringProperties(entry, propertyName)
   )
   return [...direct, ...nested]
+}
+
+function collectStringOrStringArrayProperties(value: unknown, propertyName: string): string[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => collectStringOrStringArrayProperties(entry, propertyName))
+  }
+
+  if (!isRecord(value)) {
+    return []
+  }
+
+  const direct = value[propertyName]
+  const directValues =
+    typeof direct === 'string'
+      ? [direct]
+      : Array.isArray(direct)
+        ? direct.filter((entry): entry is string => typeof entry === 'string')
+        : []
+  const nested = Object.values(value).flatMap((entry) =>
+    collectStringOrStringArrayProperties(entry, propertyName)
+  )
+  return [...directValues, ...nested]
 }
 
 function terraformBlocks(context: FileContext): TerraformBlock[] {

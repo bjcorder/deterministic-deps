@@ -143,17 +143,17 @@ inputs; and non-negative integers for remote timeout and retry inputs.
 
 ## Supported Ecosystems
 
-| Ecosystem              | V1 coverage                                                                                    |
-| ---------------------- | ---------------------------------------------------------------------------------------------- |
-| GitHub Actions         | Workflow and action `uses:` refs, reusable workflows, and `docker://` action image references. |
-| Containers             | Dockerfiles, Docker Compose files, and devcontainer image references.                          |
-| Terraform and OpenTofu | Git module refs, provider constraints, and `.terraform.lock.hcl` coverage.                     |
-| Node.js                | npm, Yarn, and pnpm manifests and lockfiles.                                                   |
-| Python                 | `requirements*.txt`, `pyproject.toml`, Pipfile, Poetry, uv, and Pipenv lockfile coverage.      |
-| Go                     | `go.mod`, `go.sum`, and git-like replacement refs.                                             |
-| Rust                   | `Cargo.toml`, `Cargo.lock`, git dependency revisions, and `rust-toolchain.toml` channels.      |
-| JVM                    | Maven `pom.xml`, Gradle Groovy/Kotlin builds, and Gradle lock or verification metadata.        |
-| Ruby                   | Gemfile dependency refs and `Gemfile.lock` coverage.                                           |
+| Ecosystem              | V1 coverage                                                                                     |
+| ---------------------- | ----------------------------------------------------------------------------------------------- |
+| GitHub Actions         | Workflow/action `uses:` refs, reusable workflows, `docker://` action images, and runner labels. |
+| Containers             | Dockerfiles, Docker Compose files, and devcontainer image references.                           |
+| Terraform and OpenTofu | Git module refs, provider constraints, and `.terraform.lock.hcl` coverage.                      |
+| Node.js                | npm, Yarn, and pnpm manifests and lockfiles.                                                    |
+| Python                 | `requirements*.txt`, `pyproject.toml`, Pipfile, Poetry, uv, and Pipenv lockfile coverage.       |
+| Go                     | `go.mod`, `go.sum`, and git-like replacement refs.                                              |
+| Rust                   | `Cargo.toml`, `Cargo.lock`, git dependency revisions, and `rust-toolchain.toml` channels.       |
+| JVM                    | Maven `pom.xml`, Gradle Groovy/Kotlin builds, and Gradle lock or verification metadata.         |
+| Ruby                   | Gemfile dependency refs and `Gemfile.lock` coverage.                                            |
 
 See [docs/ecosystems.md](docs/ecosystems.md) and [docs/rules.md](docs/rules.md) for the full rule catalog.
 

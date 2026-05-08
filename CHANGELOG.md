@@ -8,6 +8,8 @@ All notable changes to this project will be documented in this file.
   releases remain available under their original terms.
 - Added Rust `rust-toolchain.toml` scanning for floating `stable`, `beta`, and `nightly`
   toolchain channels.
+- Added GitHub Actions `runs-on` scanning for floating hosted runner labels such as
+  `ubuntu-latest`, `windows-latest`, and `macos-latest`.
 
 ## 1.0.0 - 2026-05-03
 

@@ -14,7 +14,7 @@ permissions:
 jobs:
   npm-audit:
     name: npm audit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
@@ -26,7 +26,7 @@ jobs:
 
   workflow-hygiene:
     name: workflow hygiene
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       security-events: write
@@ -44,7 +44,7 @@ jobs:
 
   scorecard:
     name: openssf scorecard
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       id-token: write

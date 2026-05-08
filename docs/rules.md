@@ -8,13 +8,19 @@ Rule ids, ecosystems, default severities, descriptions, and evaluators are regis
 
 ## GitHub Actions
 
-| Rule                           | Severity | Behavior                                                                       |
-| ------------------------------ | -------- | ------------------------------------------------------------------------------ |
-| `github-actions/sha-pin`       | high     | External `uses:` references must include a full 40-character commit SHA.       |
-| `github-actions/full-sha`      | high     | Short SHAs are flagged because they are not explicit enough for policy review. |
-| `github-actions/docker-digest` | high     | `docker://` action references must include an `@sha256:` digest.               |
+| Rule                              | Severity | Behavior                                                                        |
+| --------------------------------- | -------- | ------------------------------------------------------------------------------- |
+| `github-actions/sha-pin`          | high     | External `uses:` references must include a full 40-character commit SHA.        |
+| `github-actions/full-sha`         | high     | Short SHAs are flagged because they are not explicit enough for policy review.  |
+| `github-actions/docker-digest`    | high     | `docker://` action references must include an `@sha256:` digest.                |
+| `github-actions/versioned-runner` | medium   | GitHub-hosted `runs-on` labels must use versioned labels instead of `*-latest`. |
 
 Local `./` and `../` actions are allowed.
+
+Runner label checks flag only obvious floating GitHub-hosted aliases such as `ubuntu-latest`,
+`windows-latest`, and `macos-latest`. Versioned labels such as `ubuntu-24.04`, `windows-2025`, and
+`macos-15` are accepted, and self-hosted, grouped, or custom labels are ignored unless they include
+one of the known floating hosted aliases.
 
 ## Containers
 

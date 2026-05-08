@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   smoke:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out candidate action
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd

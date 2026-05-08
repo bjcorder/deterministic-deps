@@ -1,0 +1,7 @@
+name: ci
+on: pull_request
+jobs:
+  test:
+    runs-on: [self-hosted, linux, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567

@@ -1,0 +1,9 @@
+[
+  {
+    "ruleId": "github-actions/versioned-runner",
+    "ecosystem": "github-actions",
+    "file": ".github/workflows/ci.yml",
+    "line": 5,
+    "severity": "medium"
+  }
+]

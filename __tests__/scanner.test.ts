@@ -263,7 +263,7 @@ describe('deterministic-deps scanner', () => {
         'on: pull_request',
         'jobs:',
         '  test:',
-        '    runs-on: ubuntu-latest',
+        '    runs-on: ubuntu-24.04',
         '    steps:',
         '      # uses: actions/checkout@v4',
         '      - uses: ./local-action',
