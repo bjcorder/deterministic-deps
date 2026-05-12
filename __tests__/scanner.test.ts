@@ -863,7 +863,7 @@ describe('deterministic-deps scanner', () => {
     write(
       root,
       'requirements.txt',
-      `demo @ git+https://github.com/acme/demo.git?token=supersecret&ref=${sha}\n`
+      `demo @ git+https://github.com/acme/demo.git?private_token=supersecret&ref=${sha}\n`
     )
 
     const result = await scan({
@@ -874,12 +874,56 @@ describe('deterministic-deps scanner', () => {
     })
 
     expect(JSON.stringify(result.findings)).not.toContain('supersecret')
-    expect(JSON.stringify(result.findings)).toContain('token=[REDACTED]')
+    expect(JSON.stringify(result.findings)).toContain('private_token=[REDACTED]')
     expect(result.findings).toEqual([
       expect.objectContaining({
         ruleId: 'remote/github-ref'
       })
     ])
+  })
+
+  it('redacts credential material from stored replacement suggestions', async () => {
+    const root = tempRepo()
+    const sha = '0123456789abcdef0123456789abcdef01234567'
+    write(
+      root,
+      'Cargo.toml',
+      [
+        '[dependencies]',
+        `demo = { git = "https://user:supersecret@github.com/acme/demo.git?private_token=querysecret&rev=${sha}" }`,
+        ''
+      ].join('\n')
+    )
+    write(root, 'Cargo.lock', '# lock\n')
+
+    const result = await scan({ root, include: [], exclude: [], config: {} })
+    const serialized = JSON.stringify(result.findings)
+    const finding = result.findings.find((entry) => entry.ruleId === 'rust/git-rev-sha')
+
+    expect(serialized).not.toContain('supersecret')
+    expect(serialized).not.toContain('querysecret')
+    expect(serialized).toContain('[REDACTED]')
+    expect(finding?.suggestion).toEqual(
+      expect.objectContaining({
+        safeToApply: false,
+        replacement: expect.objectContaining({
+          oldText: expect.stringContaining('[REDACTED]'),
+          newText: expect.stringContaining('[REDACTED]')
+        })
+      })
+    )
+
+    const markdown = renderMarkdown(result.findings)
+    const sarif = JSON.stringify(renderSarif(result.findings))
+    const patch = renderPatch(root, result.findings)
+
+    expect(markdown).not.toContain('Replace line 2 with')
+    expect(markdown).not.toContain('supersecret')
+    expect(markdown).not.toContain('querysecret')
+    expect(sarif).not.toContain('"fixes"')
+    expect(sarif).not.toContain('supersecret')
+    expect(sarif).not.toContain('querysecret')
+    expect(patch).toBe('')
   })
 
   it('redacts reports and skips patch or SARIF fixes for credential-bearing replacements', () => {

@@ -23,8 +23,39 @@ describe('credential redaction', () => {
     expect(sanitizeDisplayValue('Bearer abc123')).toBe('Bearer [REDACTED]')
   })
 
+  it('redacts credential query parameter variants deterministically', () => {
+    expect(
+      sanitizeDisplayValue(
+        'https://example.com/repo.git?private_token=one&private-token=two&githubToken=three'
+      )
+    ).toBe(
+      'https://example.com/repo.git?private_token=[REDACTED]&private-token=[REDACTED]&githubToken=[REDACTED]'
+    )
+
+    expect(
+      sanitizeDisplayValue(
+        'https://example.com/repo.git?clientSecret=four&X-Amz-Credential=five&X-Amz-Signature=six'
+      )
+    ).toBe(
+      'https://example.com/repo.git?clientSecret=[REDACTED]&X-Amz-Credential=[REDACTED]&X-Amz-Signature=[REDACTED]'
+    )
+  })
+
+  it('leaves ordinary query parameters unchanged', () => {
+    expect(
+      sanitizeDisplayValue(
+        'https://example.com/repo.git?ref=main&rev=abc123&branch=release&version=1.2.3&checksum=abc'
+      )
+    ).toBe(
+      'https://example.com/repo.git?ref=main&rev=abc123&branch=release&version=1.2.3&checksum=abc'
+    )
+  })
+
   it('detects credential material without flagging ordinary refs', () => {
     expect(containsCredentialMaterial('https://user:secret@example.com/repo.git')).toBe(true)
+    expect(containsCredentialMaterial('https://example.com/repo.git?private_token=secret')).toBe(
+      true
+    )
     expect(containsCredentialMaterial('https://example.com/repo.git?ref=main')).toBe(false)
     expect(containsCredentialMaterial('actions/checkout@v4')).toBe(false)
   })

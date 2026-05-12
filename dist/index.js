@@ -41539,24 +41539,38 @@ const SENSITIVE_QUERY_KEYS = [
     'signature',
     'sig'
 ];
-const SENSITIVE_QUERY_PATTERN = new RegExp(`([?&;])(${SENSITIVE_QUERY_KEYS.map(escapeRegExp).join('|')})(=)([^&#\\s'"<>)]*)`, 'gi');
+const SENSITIVE_QUERY_PATTERN = new RegExp(`([?&;])([^=&#\\s'"<>)]{1,100})(=)([^&#\\s'"<>)]*)`, 'gi');
 function sanitizeDisplayValue(value) {
     return value
         .replace(/\b([A-Za-z][A-Za-z0-9+.-]*:\/\/)([^/\s'"<>@]+@)/g, `$1${REDACTED}@`)
         .replace(/\b([^/\s'"<>:@]+:[^/\s'"<>@]+@)([A-Za-z0-9.-]+(?::\d+)?\/)/g, `${REDACTED}@$2`)
-        .replace(SENSITIVE_QUERY_PATTERN, `$1$2$3${REDACTED}`)
+        .replace(SENSITIVE_QUERY_PATTERN, (match, separator, key, equals) => isSensitiveQueryKey(key) ? `${separator}${key}${equals}${REDACTED}` : match)
         .replace(/\b(Authorization\s*[:=]\s*)(Bearer|Basic)?\s*[^,\s'"<>)}\]]+/gi, (_match, prefix, scheme) => `${prefix}${scheme ? `${scheme} ` : ''}${REDACTED}`)
         .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi, `$1 ${REDACTED}`);
 }
 function sanitizeFinding(finding) {
+    const suggestion = finding.suggestion;
+    const replacement = suggestion?.replacement;
+    const replacementHasCredentialMaterial = replacement
+        ? containsCredentialMaterial(replacement.oldText) ||
+            containsCredentialMaterial(replacement.newText)
+        : false;
     return {
         ...finding,
         message: sanitizeDisplayValue(finding.message),
         remediation: sanitizeDisplayValue(finding.remediation),
-        suggestion: finding.suggestion
+        suggestion: suggestion
             ? {
-                ...finding.suggestion,
-                title: sanitizeDisplayValue(finding.suggestion.title)
+                ...suggestion,
+                title: sanitizeDisplayValue(suggestion.title),
+                safeToApply: replacementHasCredentialMaterial ? false : suggestion.safeToApply,
+                replacement: replacement
+                    ? {
+                        ...replacement,
+                        oldText: sanitizeDisplayValue(replacement.oldText),
+                        newText: sanitizeDisplayValue(replacement.newText)
+                    }
+                    : undefined
             }
             : undefined
     };
@@ -41564,8 +41578,42 @@ function sanitizeFinding(finding) {
 function containsCredentialMaterial(value) {
     return sanitizeDisplayValue(value) !== value;
 }
-function escapeRegExp(value) {
-    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function isSensitiveQueryKey(key) {
+    const normalized = normalizeQueryKey(key);
+    if (SENSITIVE_QUERY_KEYS.includes(normalized)) {
+        return true;
+    }
+    const compact = normalized.replace(/[^a-z0-9]/g, '');
+    const parts = normalized.split(/[^a-z0-9]+/).filter(Boolean);
+    const sensitiveWords = [
+        'token',
+        'secret',
+        'credential',
+        'password',
+        'passwd',
+        'pwd',
+        'apikey',
+        'auth',
+        'authorization',
+        'signature',
+        'sig'
+    ];
+    return sensitiveWords.some((word) => compact === word || compact.endsWith(word) || parts.includes(word));
+}
+function normalizeQueryKey(key) {
+    const decoded = safeDecodeURIComponent(key);
+    return decoded
+        .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+        .replace(/_/g, '-')
+        .toLowerCase();
+}
+function safeDecodeURIComponent(value) {
+    try {
+        return decodeURIComponent(value.replace(/\+/g, ' '));
+    }
+    catch {
+        return value;
+    }
 }
 
 
