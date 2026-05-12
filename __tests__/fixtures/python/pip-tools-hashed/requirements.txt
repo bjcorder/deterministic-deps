@@ -1,4 +1,4 @@
-requests[security]==2.32.0 \
+examplepkg[security]==2.32.0 \
     --hash=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
     --hash=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb ; python_version >= "3.11"
 

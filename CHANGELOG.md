@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Reduced GitHub Actions token permissions for CI and CodeQL workflows.
+- Added explicit vulnerability reporting links to the security policy.
+- Documented intentional floating Dockerfile fixtures and the Scorecard test-fixture dismissal
+  rationale.
+- Removed vulnerable real package names from parser fixtures to reduce security alert noise.
+- Polished post-release docs with canonical Marketplace, release, install, and schema links.
+- Improved early v1 feedback intake and maintainer triage guidance for false positives,
+  confusing findings, and setup friction.
+- Upgraded `@actions/core` to 3.0.1 and verified the bundled Node 24 action output continues
+  to run through the committed CommonJS `dist/index.js` artifact.
 - Future versions of deterministic-deps are licensed under AGPL-3.0-only. Previous MIT-licensed
   releases remain available under their original terms.
 

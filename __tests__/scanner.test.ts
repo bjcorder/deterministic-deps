@@ -36,7 +36,7 @@ describe('deterministic-deps scanner', () => {
       'module "x" { source = "git::https://github.com/acme/mod.git?ref=main" }\n'
     )
     write(root, 'package.json', JSON.stringify({ dependencies: { leftpad: '^1.0.0' } }, null, 2))
-    write(root, 'requirements.txt', 'requests==2.32.0\n')
+    write(root, 'requirements.txt', 'examplepkg==2.32.0\n')
     write(root, 'go.mod', 'module example.com/app\n')
     write(root, 'Cargo.toml', '[dependencies]\nserde = "1"\n')
     write(
@@ -112,7 +112,7 @@ describe('deterministic-deps scanner', () => {
         2
       )
     )
-    write(root, 'requirements.txt', `requests==2.32.0 --hash=sha256:${'b'.repeat(64)}\n`)
+    write(root, 'requirements.txt', `examplepkg==2.32.0 --hash=sha256:${'b'.repeat(64)}\n`)
     write(root, 'go.mod', 'module example.com/app\n')
     write(root, 'go.sum', 'example.com/module v1.0.0 h1:abc\n')
     write(root, 'Cargo.toml', '[dependencies]\nserde = "1"\n')
@@ -210,8 +210,8 @@ describe('deterministic-deps scanner', () => {
         2
       )
     )
-    write(root, 'requirements.txt', 'requests==2.32.0\n')
-    write(root, 'pyproject.toml', '[project]\ndependencies = ["requests"]\n')
+    write(root, 'requirements.txt', 'examplepkg==2.32.0\n')
+    write(root, 'pyproject.toml', '[project]\ndependencies = ["examplepkg"]\n')
     write(root, 'go.mod', 'module example.com/app\n')
     write(root, 'Cargo.toml', '[dependencies]\nserde = "1"\n')
     write(root, 'Gemfile', "gem 'rails'\n")

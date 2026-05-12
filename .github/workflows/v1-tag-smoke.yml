@@ -18,7 +18,7 @@ jobs:
       - name: Check out candidate action
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          repository: bjcorder/deterministic-deps
+          repository: Ozark-Security-Labs/deterministic-deps
           ref: ${{ inputs.action-ref }}
           path: candidate-action
 
@@ -46,6 +46,7 @@ jobs:
           }
           JSON
 
+          # Keep this as a safe patch case: full SHA in the URL, no explicit Cargo rev field.
           cat > smoke/patch/Cargo.toml <<'TOML'
           [package]
           name = "patch-smoke"

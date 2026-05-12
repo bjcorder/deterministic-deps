@@ -1,4 +1,3 @@
-import * as core from '@actions/core'
 import { DEFAULT_EXCLUDE, DEFAULT_INCLUDE } from './constants'
 import {
   loadConfigWithDiagnostics,
@@ -12,7 +11,14 @@ import { countBySeverity, writeReports } from './report'
 import { scan, resolveScanRoot } from './scanner'
 import { shouldReportFailure } from './rules'
 
+async function importCore() {
+  return import(/* webpackMode: "eager" */ '@actions/core')
+}
+
+type Core = Awaited<ReturnType<typeof importCore>>
+
 async function run(): Promise<void> {
+  const core = await importCore()
   const workspace = process.env.GITHUB_WORKSPACE ?? process.cwd()
   const scanRoot = resolveScanRoot(workspace, core.getInput('path') || '.')
   const configPath = core.getInput('config') || '.deterministic-deps.yml'
@@ -101,7 +107,8 @@ async function run(): Promise<void> {
     result.scannedFiles.length,
     result.findings.length,
     counts,
-    reports.markdownPath
+    reports.markdownPath,
+    core
   )
 
   if (mode === 'enforce' && shouldReportFailure(result.findings, severityThreshold)) {
@@ -111,15 +118,23 @@ async function run(): Promise<void> {
   }
 }
 
-run().catch((error: unknown) => {
-  core.setFailed(error instanceof Error ? error.message : String(error))
+run().catch(async (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error)
+  try {
+    const core = await importCore()
+    core.setFailed(message)
+  } catch {
+    console.error(message)
+    process.exitCode = 1
+  }
 })
 
 async function writeSummary(
   scannedFiles: number,
   findingCount: number,
   counts: { high: number; medium: number; low: number },
-  markdownPath: string
+  markdownPath: string,
+  core: Core
 ): Promise<void> {
   try {
     await core.summary

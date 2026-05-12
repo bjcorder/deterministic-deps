@@ -128,7 +128,7 @@ Editors that support YAML schemas can validate `.deterministic-deps.yml` as you 
 To associate the schema from the file itself, add this comment at the top:
 
 ```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/bjcorder/deterministic-deps/main/docs/deterministic-deps.schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Ozark-Security-Labs/deterministic-deps/main/docs/deterministic-deps.schema.json
 ```
 
 For VS Code, you can also add a workspace setting:
@@ -136,7 +136,7 @@ For VS Code, you can also add a workspace setting:
 ```json
 {
   "yaml.schemas": {
-    "https://raw.githubusercontent.com/bjcorder/deterministic-deps/main/docs/deterministic-deps.schema.json": ".deterministic-deps.yml"
+    "https://raw.githubusercontent.com/Ozark-Security-Labs/deterministic-deps/main/docs/deterministic-deps.schema.json": ".deterministic-deps.yml"
   }
 }
 ```

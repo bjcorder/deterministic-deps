@@ -1,8 +1,21 @@
 name: Bug report
-description: Report a false positive, false negative, or action failure.
+description: Report a false positive, false negative, confusing finding, setup issue, or action failure.
 title: '[Bug]: '
 labels: ['bug']
 body:
+  - type: dropdown
+    id: feedback-type
+    attributes:
+      label: Feedback type
+      description: What kind of issue are you reporting?
+      options:
+        - False positive
+        - False negative
+        - Confusing remediation
+        - Setup or documentation friction
+        - Action failure
+    validations:
+      required: true
   - type: textarea
     id: summary
     attributes:
@@ -11,13 +24,47 @@ body:
     validations:
       required: true
   - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect deterministic-deps to report or do?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What did deterministic-deps report or do instead?
+    validations:
+      required: true
+  - type: input
+    id: rule
+    attributes:
+      label: Rule or ecosystem
+      description: If known, include the rule id or ecosystem involved.
+      placeholder: node/non-deterministic-spec, rust, GitHub Actions, ...
+  - type: textarea
     id: declaration
     attributes:
-      label: Dependency declaration
-      description: Paste the relevant dependency declaration or workflow snippet.
+      label: Dependency declaration or workflow snippet
+      description: Paste the relevant manifest, dependency declaration, workflow, or config snippet.
+      render: text
+  - type: textarea
+    id: deterministic-deps-config
+    attributes:
+      label: deterministic-deps config or action inputs
+      description: Paste `.deterministic-deps.yml` or the action `with:` inputs when relevant.
+      render: yaml
+  - type: textarea
+    id: report
+    attributes:
+      label: Report or log excerpt
+      description: Paste the finding, Markdown report excerpt, SARIF excerpt, or GitHub Actions log lines.
       render: text
   - type: input
     id: version
     attributes:
       label: Action version
       placeholder: v1.0.0
+    validations:
+      required: true

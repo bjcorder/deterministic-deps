@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/bjcorder/deterministic-deps/main/docs/deterministic-deps.schema.json",
+  "$id": "https://raw.githubusercontent.com/Ozark-Security-Labs/deterministic-deps/main/docs/deterministic-deps.schema.json",
   "title": "deterministic-deps configuration",
   "description": "Configuration schema for .deterministic-deps.yml.",
   "type": "object",

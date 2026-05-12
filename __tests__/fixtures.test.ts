@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import yaml from 'js-yaml'
 import { renderMarkdown, renderPatch, renderSarif, writeReports } from '../src/report'
 import { rules } from '../src/rules'
 import { scan } from '../src/scanner'
@@ -83,6 +84,35 @@ function normalizeLineEndings(value: string): string {
   return value.replace(/\r\n/g, '\n')
 }
 
+function v1TagSmokeFixtureScript(): string {
+  const workflowPath = path.join(__dirname, '..', '.github', 'workflows', 'v1-tag-smoke.yml')
+  const workflow = yaml.load(fs.readFileSync(workflowPath, 'utf8')) as {
+    jobs?: {
+      smoke?: {
+        steps?: Array<Record<string, unknown>>
+      }
+    }
+  }
+  const step = workflow.jobs?.smoke?.steps?.find(
+    (candidate) => candidate.name === 'Prepare smoke fixtures'
+  )
+
+  if (typeof step?.run !== 'string') {
+    throw new Error('Unable to find Prepare smoke fixtures step in v1 tag smoke workflow')
+  }
+
+  return step.run
+}
+
+function extractPatchCargoToml(script: string): string {
+  const match = script.match(/cat > smoke\/patch\/Cargo\.toml <<'TOML'\n([\s\S]*?)\nTOML/m)
+  if (!match) {
+    throw new Error('Unable to find smoke/patch/Cargo.toml heredoc in v1 tag smoke workflow')
+  }
+
+  return `${match[1]}\n`
+}
+
 describe('fixture matrix', () => {
   const fixtureCases = discoverFixtureCases()
   const unitCoveredRuleIds = ['remote/github-ref', 'remote/validation-error']
@@ -151,6 +181,46 @@ describe('fixture matrix', () => {
       'rust',
       'terraform'
     ])
+  })
+})
+
+describe('release smoke fixtures', () => {
+  it('keeps the v1 tag smoke patch fixture backed by a safe Cargo patch suggestion', async () => {
+    const script = v1TagSmokeFixtureScript()
+    const cargoToml = extractPatchCargoToml(script)
+    const dependencyLines = cargoToml.split(/\r?\n/).filter((line) => /\bgit\s*=/.test(line))
+
+    expect(script).toContain('touch smoke/patch/Cargo.lock')
+    expect(dependencyLines).toHaveLength(1)
+    expect(dependencyLines[0]).not.toMatch(/(?:^|[{,])\s*rev\s*=/)
+
+    const sha = dependencyLines[0].match(/[?&]rev=([a-f0-9]{40})/)?.[1]
+    expect(sha).toBeDefined()
+
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'deterministic-deps-smoke-patch-'))
+    fs.writeFileSync(path.join(root, 'Cargo.toml'), cargoToml, 'utf8')
+    fs.writeFileSync(path.join(root, 'Cargo.lock'), '# lock\n', 'utf8')
+
+    const result = await scan({ root, include: [], exclude: [], config: {} })
+    const expectedReplacement = dependencyLines[0].replace(/\s*}\s*$/, `, rev = "${sha}" }`)
+
+    expect(result.findings).toEqual([
+      expect.objectContaining({
+        ruleId: 'rust/git-rev-sha',
+        severity: 'high',
+        suggestion: expect.objectContaining({
+          safeToApply: true,
+          replacement: expect.objectContaining({
+            oldText: dependencyLines[0],
+            newText: expectedReplacement
+          })
+        })
+      })
+    ])
+
+    const patch = renderPatch(root, result.findings)
+    expect(patch).toContain('diff --git a/Cargo.toml b/Cargo.toml')
+    expect(patch).toContain(`+${expectedReplacement}`)
   })
 })
 
