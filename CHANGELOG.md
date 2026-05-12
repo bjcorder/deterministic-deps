@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Upgraded `@actions/core` to 3.0.1 and verified the bundled Node 24 action output continues
+  to run through the committed CommonJS `dist/index.js` artifact.
 - Future versions of deterministic-deps are licensed under AGPL-3.0-only. Previous MIT-licensed
   releases remain available under their original terms.
 
