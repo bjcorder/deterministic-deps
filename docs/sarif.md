@@ -40,7 +40,7 @@ on:
 
 jobs:
   deterministic-deps:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       security-events: write
@@ -72,7 +72,7 @@ on:
 
 jobs:
   deterministic-deps:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       security-events: write

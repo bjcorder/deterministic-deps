@@ -88,6 +88,11 @@ interface JvmVersionEntry {
   line: number
 }
 
+interface GithubActionsRunnerReference {
+  label: string
+  line: number
+}
+
 export const rules: Rule[] = [
   rule(
     'github-actions/sha-pin',
@@ -108,6 +113,13 @@ export const rules: Rule[] = [
     'github-actions',
     'high',
     'Docker action references must include sha256 digests.',
+    checkGithubActions
+  ),
+  rule(
+    'github-actions/versioned-runner',
+    'github-actions',
+    'medium',
+    'GitHub-hosted runner labels should use versioned operating system labels.',
     checkGithubActions
   ),
   rule(
@@ -283,8 +295,10 @@ function checkGithubActions(context: FileContext): Finding[] {
   }
 
   const findings: Finding[] = []
-  const references = parseYamlDocuments(context.content).flatMap((document) =>
-    collectStringProperties(document, 'uses')
+  const documents = parseYamlDocuments(context.content)
+  const references = documents.flatMap((document) => collectStringProperties(document, 'uses'))
+  const runnerReferences = documents.flatMap((document) =>
+    collectGithubActionsRunnerReferences(document, context.lines)
   )
 
   for (const reference of references) {
@@ -295,7 +309,18 @@ function checkGithubActions(context: FileContext): Finding[] {
     }
   }
 
-  if (references.length > 0) {
+  for (const runnerReference of runnerReferences) {
+    const findingForRunner = checkGithubActionsRunnerLabel(
+      context.file,
+      runnerReference.line,
+      runnerReference.label
+    )
+    if (findingForRunner) {
+      findings.push(findingForRunner)
+    }
+  }
+
+  if (documents.length > 0 && (references.length > 0 || runnerReferences.length > 0)) {
     return findings
   }
 
@@ -352,16 +377,52 @@ function checkActionReference(file: string, line: number, reference: string): Fi
   )
 }
 
+function checkGithubActionsRunnerLabel(
+  file: string,
+  line: number,
+  label: string
+): Finding | undefined {
+  if (!isFloatingGithubHostedRunnerLabel(label)) {
+    return undefined
+  }
+
+  return finding(
+    'github-actions/versioned-runner',
+    'github-actions',
+    file,
+    line,
+    'medium',
+    `GitHub-hosted runner label '${label}' can move to a new image without a workflow change.`,
+    'Use a versioned runner label such as ubuntu-24.04, windows-2025, or macos-15.'
+  )
+}
+
 function checkGithubActionsWithLineFallback(context: FileContext): Finding[] {
-  return context.lines.flatMap((line, index) => {
+  const findings: Finding[] = []
+
+  context.lines.forEach((line, index) => {
     const usesMatch = line.match(/\buses:\s*['"]?([^'"\s#]+)['"]?/)
-    if (!usesMatch) {
-      return []
+    if (usesMatch) {
+      const findingForReference = checkActionReference(context.file, index + 1, usesMatch[1])
+      if (findingForReference) {
+        findings.push(findingForReference)
+      }
     }
 
-    const findingForReference = checkActionReference(context.file, index + 1, usesMatch[1])
-    return findingForReference ? [findingForReference] : []
+    const runsOnMatch = line.match(/\bruns-on:\s*(.+)$/)
+    if (!runsOnMatch) {
+      return
+    }
+
+    for (const label of parseFallbackRunsOnLabels(runsOnMatch[1])) {
+      const findingForRunner = checkGithubActionsRunnerLabel(context.file, index + 1, label)
+      if (findingForRunner) {
+        findings.push(findingForRunner)
+      }
+    }
   })
+
+  return findings
 }
 
 function checkDockerLikeFiles(context: FileContext): Finding[] {
@@ -1742,6 +1803,140 @@ function collectStringProperties(value: unknown, propertyName: string): string[]
   return [...direct, ...nested]
 }
 
+function collectGithubActionsRunnerReferences(
+  document: unknown,
+  lines: string[]
+): GithubActionsRunnerReference[] {
+  if (!isRecord(document) || !isRecord(document.jobs)) {
+    return []
+  }
+
+  return Object.values(document.jobs).flatMap((job) => {
+    if (!isRecord(job)) {
+      return []
+    }
+
+    return collectJobRunnerReferences(job, lines)
+  })
+}
+
+function collectJobRunnerReferences(
+  job: Record<string, unknown>,
+  lines: string[]
+): GithubActionsRunnerReference[] {
+  const runsOn = job['runs-on']
+
+  if (typeof runsOn === 'string') {
+    const matrixAxis = matrixAxisFromRunsOn(runsOn)
+    if (matrixAxis) {
+      return collectMatrixRunnerReferences(job, matrixAxis, lines)
+    }
+
+    return [
+      {
+        label: runsOn,
+        line: lineForYamlScalar(lines, 'runs-on', runsOn)
+      }
+    ]
+  }
+
+  if (Array.isArray(runsOn)) {
+    return runsOn.flatMap((label) =>
+      typeof label === 'string'
+        ? [
+            {
+              label,
+              line: lineForYamlArrayValue(lines, 'runs-on', label)
+            }
+          ]
+        : []
+    )
+  }
+
+  return []
+}
+
+function collectMatrixRunnerReferences(
+  job: Record<string, unknown>,
+  axis: string,
+  lines: string[]
+): GithubActionsRunnerReference[] {
+  if (!isRecord(job.strategy) || !isRecord(job.strategy.matrix)) {
+    return []
+  }
+
+  const references: GithubActionsRunnerReference[] = []
+  const axisValues = job.strategy.matrix[axis]
+  if (typeof axisValues === 'string') {
+    references.push({
+      label: axisValues,
+      line: lineForYamlValue(lines, axis, axisValues)
+    })
+  } else if (Array.isArray(axisValues)) {
+    references.push(
+      ...axisValues.flatMap((label) =>
+        typeof label === 'string'
+          ? [
+              {
+                label,
+                line: lineForYamlArrayValue(lines, axis, label)
+              }
+            ]
+          : []
+      )
+    )
+  }
+
+  const include = job.strategy.matrix.include
+  if (Array.isArray(include)) {
+    references.push(
+      ...include.flatMap((entry) => {
+        if (!isRecord(entry) || typeof entry[axis] !== 'string') {
+          return []
+        }
+
+        return [
+          {
+            label: entry[axis],
+            line: lineForYamlValue(lines, axis, entry[axis])
+          }
+        ]
+      })
+    )
+  }
+
+  return references
+}
+
+function matrixAxisFromRunsOn(runsOn: string): string | undefined {
+  return runsOn.match(/^\s*\$\{\{\s*matrix\.([A-Za-z_][A-Za-z0-9_-]*)\s*\}\}\s*$/)?.[1]
+}
+
+function isFloatingGithubHostedRunnerLabel(label: string): boolean {
+  return /^(ubuntu|windows|macos)-latest$/.test(label.trim())
+}
+
+function parseFallbackRunsOnLabels(value: string): string[] {
+  const withoutComment = value.replace(/\s+#.*$/, '').trim()
+  if (!withoutComment || withoutComment.includes('${{')) {
+    return []
+  }
+
+  if (withoutComment.startsWith('[') && withoutComment.endsWith(']')) {
+    return withoutComment
+      .slice(1, -1)
+      .split(',')
+      .map((entry) => unquoteYamlScalar(entry.trim()))
+      .filter(Boolean)
+  }
+
+  return [unquoteYamlScalar(withoutComment)].filter(Boolean)
+}
+
+function unquoteYamlScalar(value: string): string {
+  return value.replace(/^['"]|['"]$/g, '').trim()
+}
+
 function terraformBlocks(context: FileContext): TerraformBlock[] {
   const blocks: TerraformBlock[] = []
   let activeBlock: TerraformBlock | undefined
@@ -2254,6 +2449,60 @@ function lineForYamlScalar(lines: string[], key: string, value: string): number 
   const pattern = new RegExp(`\\b${escapeRegExp(key)}\\s*:\\s*['"]?${escaped}['"]?\\s*(?:#.*)?$`)
   const index = lines.findIndex((line) => pattern.test(line.trim()))
   return index === -1 ? lineForText(lines, value) : index + 1
+}
+
+function lineForYamlValue(lines: string[], key: string, value: string): number {
+  const escapedKey = escapeRegExp(key)
+  const escapedValue = escapeRegExp(value)
+  const keyAndValuePattern = new RegExp(`\\b${escapedKey}\\b.*${escapedValue}`)
+  const keyAndValueIndex = lines.findIndex((line) => keyAndValuePattern.test(line.trim()))
+  if (keyAndValueIndex !== -1) {
+    return keyAndValueIndex + 1
+  }
+
+  return lineForYamlScalar(lines, key, value)
+}
+
+function lineForYamlArrayValue(lines: string[], key: string, value: string): number {
+  const escapedKey = escapeRegExp(key)
+  const escapedValue = escapeRegExp(value)
+  const inlineArrayPattern = new RegExp(`\\b${escapedKey}\\b.*\\[.*${escapedValue}`)
+  const inlineArrayIndex = lines.findIndex((line) => inlineArrayPattern.test(line.trim()))
+  if (inlineArrayIndex !== -1) {
+    return inlineArrayIndex + 1
+  }
+
+  const listItemPattern = new RegExp(`^\\s*-\\s*['"]?${escapedValue}['"]?(?:\\s+#.*)?$`)
+  const keyOnlyPattern = new RegExp(`^\\s*${escapedKey}\\s*:\\s*(?:#.*)?$`)
+  for (const [keyIndex, line] of lines.entries()) {
+    if (!keyOnlyPattern.test(line)) {
+      continue
+    }
+
+    const keyIndent = line.search(/\S/)
+    for (let index = keyIndex + 1; index < lines.length; index += 1) {
+      const candidate = lines[index]
+      if (!candidate.trim() || candidate.trim().startsWith('#')) {
+        continue
+      }
+
+      const candidateIndent = candidate.search(/\S/)
+      if (candidateIndent <= keyIndent || !/^\s*-/.test(candidate)) {
+        break
+      }
+
+      if (listItemPattern.test(candidate)) {
+        return index + 1
+      }
+    }
+  }
+
+  const listItemIndex = lines.findIndex((line) => listItemPattern.test(line))
+  if (listItemIndex !== -1) {
+    return listItemIndex + 1
+  }
+
+  return lineForYamlValue(lines, key, value)
 }
 
 function escapeRegExp(value: string): string {
