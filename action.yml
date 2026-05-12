@@ -39,6 +39,10 @@ inputs:
     description: Opt in to remote validation of immutable GitHub commit references. Defaults to false.
     required: false
     default: 'false'
+  remote-token-policy:
+    description: Controls whether GITHUB_TOKEN may be sent during remote validation. Use auto for trusted GitHub API hosts or never to omit it. Defaults to auto.
+    required: false
+    default: auto
   remote-timeout-ms:
     description: Per-request timeout for remote validation. Defaults to 5000.
     required: false

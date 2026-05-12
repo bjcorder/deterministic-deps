@@ -4,7 +4,8 @@ import { clearTimeout, setTimeout } from 'node:timers'
 import { setTimeout as sleepTimeout } from 'node:timers/promises'
 import yaml from 'js-yaml'
 import { SHA_PATTERN } from './constants'
-import { Config, Finding } from './types'
+import { sanitizeDisplayValue } from './redaction'
+import { Config, ConfigDiagnostic, Finding } from './types'
 
 interface RemoteReference {
   host: string
@@ -21,6 +22,16 @@ type ValidationResult =
   | { status: 'missing' }
   | { status: 'error'; message: string }
 
+interface RemoteValidationResult {
+  findings: Finding[]
+  diagnostics: ConfigDiagnostic[]
+}
+
+interface RemoteTokenDecision {
+  headers: Record<string, string>
+  diagnostics: ConfigDiagnostic[]
+}
+
 const DEFAULT_TIMEOUT_MS = 5000
 const DEFAULT_RETRIES = 1
 
@@ -28,19 +39,28 @@ export async function validateRemoteReferences(
   root: string,
   files: string[],
   config: Config
-): Promise<Finding[]> {
+): Promise<RemoteValidationResult> {
   const references = dedupeRemoteReferences(
     files.flatMap((file) => collectRemoteReferences(root, file))
   )
   const cache = new Map<string, ValidationResult>()
   const findings: Finding[] = []
+  const apiBaseUrl = githubApiBaseUrl()
+  const tokenDecision = githubTokenDecision(apiBaseUrl, config)
 
   for (const reference of references) {
     const key =
       `${reference.host}/${reference.owner}/${reference.repo}@${reference.sha}`.toLowerCase()
     let result = cache.get(key)
     if (!result) {
-      result = await validateGithubCommit(reference.owner, reference.repo, reference.sha, config)
+      result = await validateGithubCommit(
+        reference.owner,
+        reference.repo,
+        reference.sha,
+        config,
+        apiBaseUrl,
+        tokenDecision.headers
+      )
       cache.set(key, result)
     }
 
@@ -67,7 +87,7 @@ export async function validateRemoteReferences(
     }
   }
 
-  return findings
+  return { findings, diagnostics: tokenDecision.diagnostics }
 }
 
 function collectRemoteReferences(root: string, file: string): RemoteReference[] {
@@ -162,14 +182,16 @@ async function validateGithubCommit(
   owner: string,
   repo: string,
   sha: string,
-  config: Config
+  config: Config,
+  apiBaseUrl: string,
+  headers: Record<string, string>
 ): Promise<ValidationResult> {
   const timeoutMs = config.remoteValidationTimeoutMs ?? DEFAULT_TIMEOUT_MS
   const retries = config.remoteValidationRetries ?? DEFAULT_RETRIES
-  const url = githubCommitApiUrl(owner, repo, sha)
+  const url = githubCommitApiUrl(apiBaseUrl, owner, repo, sha)
 
   for (let attempt = 0; attempt <= retries; attempt += 1) {
-    const result = await fetchGithubCommit(url, timeoutMs)
+    const result = await fetchGithubCommit(url, timeoutMs, headers)
     if (result.status === 'found' || result.status === 'missing') {
       return result
     }
@@ -182,8 +204,7 @@ async function validateGithubCommit(
   return { status: 'error', message: 'validation retry loop exited unexpectedly' }
 }
 
-function githubCommitApiUrl(owner: string, repo: string, sha: string): string {
-  const apiBaseUrl = githubApiBaseUrl()
+function githubCommitApiUrl(apiBaseUrl: string, owner: string, repo: string, sha: string): string {
   return `${apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${sha}`
 }
 
@@ -214,14 +235,18 @@ function githubServerUrl(): URL {
   }
 }
 
-async function fetchGithubCommit(url: string, timeoutMs: number): Promise<ValidationResult> {
+async function fetchGithubCommit(
+  url: string,
+  timeoutMs: number,
+  headers: Record<string, string>
+): Promise<ValidationResult> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
 
   try {
     const response = await globalThis.fetch(url, {
       method: 'GET',
-      headers: githubHeaders(),
+      headers,
       signal: controller.signal
     })
 
@@ -252,16 +277,49 @@ async function fetchGithubCommit(url: string, timeoutMs: number): Promise<Valida
   }
 }
 
-function githubHeaders(): HeadersInit {
+function githubTokenDecision(apiBaseUrl: string, config: Config): RemoteTokenDecision {
   const headers: Record<string, string> = {
     Accept: 'application/vnd.github+json',
     'User-Agent': 'deterministic-deps'
   }
   const token = process.env.GITHUB_TOKEN
-  if (token) {
-    headers.Authorization = `Bearer ${token}`
+  if (!token || config.remoteTokenPolicy === 'never') {
+    return { headers, diagnostics: [] }
   }
-  return headers
+
+  if (isTrustedGithubApiBaseUrl(apiBaseUrl)) {
+    headers.Authorization = `Bearer ${token}`
+    return { headers, diagnostics: [] }
+  }
+
+  return {
+    headers,
+    diagnostics: [
+      {
+        message: `remote-token-policy auto omitted GITHUB_TOKEN for untrusted GitHub API URL '${sanitizeDisplayValue(apiBaseUrl)}'. Expected HTTPS api.github.com for GitHub.com or an HTTPS host matching GITHUB_SERVER_URL for GitHub Enterprise Server.`
+      }
+    ]
+  }
+}
+
+function isTrustedGithubApiBaseUrl(apiBaseUrl: string): boolean {
+  let apiUrl: URL
+  try {
+    apiUrl = new URL(apiBaseUrl)
+  } catch {
+    return false
+  }
+
+  if (apiUrl.protocol !== 'https:') {
+    return false
+  }
+
+  const serverUrl = githubServerUrl()
+  if (serverUrl.hostname.toLowerCase() === 'github.com') {
+    return apiUrl.host.toLowerCase() === 'api.github.com'
+  }
+
+  return apiUrl.host.toLowerCase() === serverUrl.host.toLowerCase()
 }
 
 function remoteFinding(

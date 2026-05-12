@@ -4,6 +4,7 @@ import {
   normalizeBooleanInput,
   normalizeModeInput,
   normalizePositiveIntegerInput,
+  normalizeRemoteTokenPolicyInput,
   normalizeSeverityInput,
   splitPatterns
 } from './config'
@@ -39,6 +40,10 @@ async function run(): Promise<void> {
     'remote-validation',
     config.remoteValidation ?? false
   )
+  const remoteTokenPolicyInput = normalizeRemoteTokenPolicyInput(
+    core.getInput('remote-token-policy'),
+    config.remoteTokenPolicy ?? 'auto'
+  )
   const remoteValidationTimeoutMsInput = normalizePositiveIntegerInput(
     core.getInput('remote-timeout-ms'),
     'remote-timeout-ms',
@@ -56,6 +61,7 @@ async function run(): Promise<void> {
     ...sarifInput.diagnostics,
     ...patchInput.diagnostics,
     ...remoteValidationInput.diagnostics,
+    ...remoteTokenPolicyInput.diagnostics,
     ...remoteValidationTimeoutMsInput.diagnostics,
     ...remoteValidationRetriesInput.diagnostics
   ]) {
@@ -69,6 +75,7 @@ async function run(): Promise<void> {
   const sarif = sarifInput.value
   const patch = patchInput.value
   const remoteValidation = remoteValidationInput.value
+  const remoteTokenPolicy = remoteTokenPolicyInput.value
   const remoteValidationTimeoutMs = remoteValidationTimeoutMsInput.value
   const remoteValidationRetries = remoteValidationRetriesInput.value
 
@@ -79,10 +86,15 @@ async function run(): Promise<void> {
     config: {
       ...config,
       remoteValidation,
+      remoteTokenPolicy,
       remoteValidationTimeoutMs,
       remoteValidationRetries
     }
   })
+
+  for (const diagnostic of result.diagnostics) {
+    core.warning(diagnostic.message)
+  }
 
   for (const finding of result.findings) {
     core.warning(`${finding.message} ${finding.remediation}`, {

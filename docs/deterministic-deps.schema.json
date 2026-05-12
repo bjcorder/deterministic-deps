@@ -22,6 +22,10 @@
       "description": "Whether to validate immutable GitHub commit refs through the GitHub API.",
       "type": "boolean"
     },
+    "remote-token-policy": {
+      "description": "Controls whether GITHUB_TOKEN may be sent during remote validation.",
+      "enum": ["auto", "never"]
+    },
     "remote-timeout-ms": {
       "description": "Per-request timeout for remote validation in milliseconds.",
       "$ref": "#/$defs/nonNegativeInteger"

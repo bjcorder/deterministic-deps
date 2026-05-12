@@ -6,12 +6,14 @@ import yaml from 'js-yaml'
 import {
   ECOSYSTEM_OPTIONS,
   VALID_MODES,
+  VALID_REMOTE_TOKEN_POLICIES,
   VALID_SEVERITIES,
   loadConfig,
   loadConfigWithDiagnostics,
   normalizeBooleanInput,
   normalizeModeInput,
   normalizePositiveIntegerInput,
+  normalizeRemoteTokenPolicyInput,
   normalizeSeverityInput
 } from '../src/config'
 
@@ -83,6 +85,7 @@ describe('configuration', () => {
         'severity-threshold: urgent',
         'patch: maybe',
         'remote-validation: maybe',
+        'remote-token-policy: sometimes',
         'remote-timeout-ms: slow',
         'remote-retries: -1',
         'include: "**/*.tf"',
@@ -114,6 +117,7 @@ describe('configuration', () => {
     expect(result.config.severityThreshold).toBeUndefined()
     expect(result.config.patch).toBeUndefined()
     expect(result.config.remoteValidation).toBeUndefined()
+    expect(result.config.remoteTokenPolicy).toBeUndefined()
     expect(result.config.remoteValidationTimeoutMs).toBeUndefined()
     expect(result.config.remoteValidationRetries).toBeUndefined()
     expect(result.config.include).toBeUndefined()
@@ -128,6 +132,7 @@ describe('configuration', () => {
         "Invalid severity-threshold 'urgent'; expected one of low, medium, high.",
         'Invalid patch; expected boolean true or false.',
         'Invalid remote-validation; expected boolean true or false.',
+        "Invalid remote-token-policy 'sometimes'; expected one of auto, never.",
         'Invalid remote-timeout-ms; expected a non-negative integer.',
         'Invalid remote-retries; expected a non-negative integer.',
         'Invalid include; expected an array of strings.',
@@ -158,6 +163,7 @@ describe('configuration', () => {
       [
         'patch: true',
         'remote-validation: true',
+        'remote-token-policy: never',
         'remote-timeout-ms: 2500',
         'remote-retries: 2',
         ''
@@ -169,6 +175,7 @@ describe('configuration', () => {
 
     expect(config.patch).toBe(true)
     expect(config.remoteValidation).toBe(true)
+    expect(config.remoteTokenPolicy).toBe('never')
     expect(config.remoteValidationTimeoutMs).toBe(2500)
     expect(config.remoteValidationRetries).toBe(2)
   })
@@ -180,6 +187,7 @@ describe('configuration', () => {
       ...normalizeBooleanInput('maybe', 'sarif', true).diagnostics,
       ...normalizeBooleanInput('maybe', 'patch', false).diagnostics,
       ...normalizeBooleanInput('maybe', 'remote-validation', true).diagnostics,
+      ...normalizeRemoteTokenPolicyInput('sometimes', 'never').diagnostics,
       ...normalizePositiveIntegerInput('slow', 'remote-timeout-ms', 5000).diagnostics,
       ...normalizePositiveIntegerInput('1.5', 'remote-retries', 1).diagnostics
     ]
@@ -189,6 +197,7 @@ describe('configuration', () => {
     expect(normalizeBooleanInput('maybe', 'sarif', true).value).toBe(true)
     expect(normalizeBooleanInput('maybe', 'patch', false).value).toBe(false)
     expect(normalizeBooleanInput('maybe', 'remote-validation', true).value).toBe(true)
+    expect(normalizeRemoteTokenPolicyInput('sometimes', 'never').value).toBe('never')
     expect(normalizePositiveIntegerInput('slow', 'remote-timeout-ms', 5000).value).toBe(5000)
     expect(normalizePositiveIntegerInput('1.5', 'remote-retries', 1).value).toBe(1)
     expect(diagnostics.map((diagnostic) => diagnostic.message)).toEqual([
@@ -197,6 +206,7 @@ describe('configuration', () => {
       'Invalid action input sarif; expected boolean true or false. Falling back to true.',
       'Invalid action input patch; expected boolean true or false. Falling back to false.',
       'Invalid action input remote-validation; expected boolean true or false. Falling back to true.',
+      "Invalid action input remote-token-policy 'sometimes'; expected one of auto, never. Falling back to never.",
       'Invalid action input remote-timeout-ms; expected a non-negative integer. Falling back to 5000.',
       'Invalid action input remote-retries; expected a non-negative integer. Falling back to 1.'
     ])
@@ -213,6 +223,10 @@ describe('configuration', () => {
       value: 3,
       diagnostics: []
     })
+    expect(normalizeRemoteTokenPolicyInput('', 'never')).toEqual({
+      value: 'never',
+      diagnostics: []
+    })
 
     expect(normalizeModeInput('advisory', 'enforce')).toEqual({
       value: 'advisory',
@@ -227,6 +241,10 @@ describe('configuration', () => {
       value: 0,
       diagnostics: []
     })
+    expect(normalizeRemoteTokenPolicyInput('auto', 'never')).toEqual({
+      value: 'auto',
+      diagnostics: []
+    })
   })
 
   it('publishes a schema that accepts the documented configuration example', () => {
@@ -239,6 +257,7 @@ describe('configuration', () => {
       'severity-threshold': 'urgent',
       patch: 'maybe',
       'remote-validation': 'yes',
+      'remote-token-policy': 'sometimes',
       'remote-timeout-ms': 'slow',
       'remote-retries': -1,
       include: '**/*.tf',
@@ -270,6 +289,7 @@ describe('configuration', () => {
         '/severity-threshold must be equal to one of the allowed values',
         '/patch must be boolean',
         '/remote-validation must be boolean',
+        '/remote-token-policy must be equal to one of the allowed values',
         '/remote-timeout-ms must be integer',
         '/remote-retries must be >= 0',
         '/include must be array',
@@ -291,6 +311,7 @@ describe('configuration', () => {
     const ecosystemProperties = properties.ecosystems.properties as Record<string, { $ref: string }>
 
     expect(properties.mode.enum).toEqual(VALID_MODES)
+    expect(properties['remote-token-policy'].enum).toEqual(VALID_REMOTE_TOKEN_POLICIES)
     expect(definitions.severity.enum).toEqual(VALID_SEVERITIES)
     expect(Object.keys(ecosystemProperties).sort()).toEqual(Object.keys(ECOSYSTEM_OPTIONS).sort())
 

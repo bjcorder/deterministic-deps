@@ -10,6 +10,7 @@ mode: advisory
 severity-threshold: low
 patch: false
 remote-validation: false
+remote-token-policy: auto
 remote-timeout-ms: 5000
 remote-retries: 1
 
@@ -56,20 +57,21 @@ ecosystems:
 
 ## Fields
 
-| Field                | Description                                                               |
-| -------------------- | ------------------------------------------------------------------------- |
-| `mode`               | `advisory` or `enforce`.                                                  |
-| `severity-threshold` | `low`, `medium`, or `high`; used only in enforce mode.                    |
-| `patch`              | Write a unified diff with safe remediation suggestions.                   |
-| `remote-validation`  | Opt in to remote validation of immutable GitHub commit refs.              |
-| `remote-timeout-ms`  | Per-request remote validation timeout in milliseconds.                    |
-| `remote-retries`     | Retry count for transient remote validation failures.                     |
-| `include`            | Glob patterns to scan.                                                    |
-| `exclude`            | Glob patterns to skip in addition to built-in vendor/build ignores.       |
-| `rules`              | Map of rule id to `true` or `false`.                                      |
-| `severity`           | Map of rule id to severity override.                                      |
-| `allowlist`          | Finding suppressions by file glob, rule id, ecosystem, and optional line. |
-| `ecosystems`         | Ecosystem-specific policy options for lockfile and hash requirements.     |
+| Field                 | Description                                                               |
+| --------------------- | ------------------------------------------------------------------------- |
+| `mode`                | `advisory` or `enforce`.                                                  |
+| `severity-threshold`  | `low`, `medium`, or `high`; used only in enforce mode.                    |
+| `patch`               | Write a unified diff with safe remediation suggestions.                   |
+| `remote-validation`   | Opt in to remote validation of immutable GitHub commit refs.              |
+| `remote-token-policy` | `auto` or `never`; controls remote-validation token forwarding.           |
+| `remote-timeout-ms`   | Per-request remote validation timeout in milliseconds.                    |
+| `remote-retries`      | Retry count for transient remote validation failures.                     |
+| `include`             | Glob patterns to scan.                                                    |
+| `exclude`             | Glob patterns to skip in addition to built-in vendor/build ignores.       |
+| `rules`               | Map of rule id to `true` or `false`.                                      |
+| `severity`            | Map of rule id to severity override.                                      |
+| `allowlist`           | Finding suppressions by file glob, rule id, ecosystem, and optional line. |
+| `ecosystems`          | Ecosystem-specific policy options for lockfile and hash requirements.     |
 
 Allowlist entries should be narrow and temporary. Prefer fixing declarations or adding lockfiles when practical.
 
@@ -103,6 +105,7 @@ Examples that warn and fall back:
 - `severity-threshold: urgent`
 - `patch: maybe`
 - `remote-validation: yes`
+- `remote-token-policy: always`
 - `remote-timeout-ms: slow`
 - `include: '**/*.tf'`
 - `rules` or `ecosystems` values that are not booleans
@@ -118,6 +121,7 @@ Accepted direct input values:
 | ------------------------------------- | ------------------------------------------- |
 | `mode`                                | `advisory` or `enforce`                     |
 | `severity-threshold`                  | `low`, `medium`, or `high`                  |
+| `remote-token-policy`                 | `auto` or `never`                           |
 | `sarif`, `patch`, `remote-validation` | `true` or `false`                           |
 | `remote-timeout-ms`, `remote-retries` | Non-negative integers such as `0` or `5000` |
 
@@ -166,7 +170,9 @@ When `remote-validation: true`, the scanner validates pinned GitHub Action refs 
 
 Remote validation supports GitHub.com and GitHub Enterprise Server. In GitHub Actions, the scanner uses `GITHUB_API_URL` for commit API requests and `GITHUB_SERVER_URL` to identify Git dependency URLs hosted by the current GitHub server. Outside GitHub Actions, it defaults to `https://api.github.com` and `https://github.com`; for GHES, set `GITHUB_SERVER_URL` and optionally `GITHUB_API_URL`.
 
-Public commits can be checked without credentials. If `GITHUB_TOKEN` is available in the environment, it is sent to the configured GitHub server to support private repositories and higher rate limits. Enabling remote validation may disclose repository names and commit SHAs to the configured GitHub server and can add latency to CI runs.
+Public commits can be checked without credentials. If `GITHUB_TOKEN` is available in the environment, the default `remote-token-policy: auto` sends it only to trusted HTTPS API hosts: `https://api.github.com` for GitHub.com, or an API host matching `GITHUB_SERVER_URL` for GitHub Enterprise Server. If the API URL is non-HTTPS or does not match the configured GitHub server, the token is omitted and the action emits a deterministic warning. Set `remote-token-policy: never` to omit `GITHUB_TOKEN` for all remote-validation requests.
+
+Enabling remote validation may disclose repository names and commit SHAs to the configured GitHub server and can add latency to CI runs. Sending `GITHUB_TOKEN` can improve rate limits and validate private repositories, but it is not required for public refs.
 
 ## Patch Output
 

@@ -41044,7 +41044,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.ECOSYSTEM_OPTIONS = exports.VALID_MODES = exports.VALID_SEVERITIES = void 0;
+exports.ECOSYSTEM_OPTIONS = exports.VALID_REMOTE_TOKEN_POLICIES = exports.VALID_MODES = exports.VALID_SEVERITIES = void 0;
 exports.splitPatterns = splitPatterns;
 exports.normalizeMode = normalizeMode;
 exports.normalizeModeInput = normalizeModeInput;
@@ -41054,6 +41054,7 @@ exports.normalizeBoolean = normalizeBoolean;
 exports.normalizeBooleanInput = normalizeBooleanInput;
 exports.normalizePositiveInteger = normalizePositiveInteger;
 exports.normalizePositiveIntegerInput = normalizePositiveIntegerInput;
+exports.normalizeRemoteTokenPolicyInput = normalizeRemoteTokenPolicyInput;
 exports.loadConfig = loadConfig;
 exports.loadConfigWithDiagnostics = loadConfigWithDiagnostics;
 const node_fs_1 = __importDefault(__nccwpck_require__(3024));
@@ -41061,6 +41062,7 @@ const node_path_1 = __importDefault(__nccwpck_require__(6760));
 const js_yaml_1 = __importDefault(__nccwpck_require__(4281));
 exports.VALID_SEVERITIES = ['low', 'medium', 'high'];
 exports.VALID_MODES = ['advisory', 'enforce'];
+exports.VALID_REMOTE_TOKEN_POLICIES = ['auto', 'never'];
 exports.ECOSYSTEM_OPTIONS = {
     go: ['requireGoSum'],
     jvm: ['allowDynamicVersionsWithGradleMetadata'],
@@ -41193,6 +41195,22 @@ function normalizePositiveIntegerInput(value, key, fallback) {
         ]
     };
 }
+function normalizeRemoteTokenPolicyInput(value, fallback = 'auto', key = 'remote-token-policy') {
+    if (value === undefined || value === '') {
+        return { value: fallback, diagnostics: [] };
+    }
+    if (isRemoteTokenPolicy(value)) {
+        return { value, diagnostics: [] };
+    }
+    return {
+        value: fallback,
+        diagnostics: [
+            {
+                message: `Invalid action input ${key} '${String(value)}'; expected one of ${exports.VALID_REMOTE_TOKEN_POLICIES.join(', ')}. Falling back to ${fallback}.`
+            }
+        ]
+    };
+}
 function loadConfig(root, configPath) {
     return loadConfigWithDiagnostics(root, configPath).config;
 }
@@ -41217,6 +41235,7 @@ function loadConfigWithDiagnostics(root, configPath) {
             severityThreshold: readSeverity(raw, 'severity-threshold', diagnostics),
             patch: readBoolean(raw, 'patch', diagnostics),
             remoteValidation: readBoolean(raw, 'remote-validation', diagnostics),
+            remoteTokenPolicy: readRemoteTokenPolicy(raw, diagnostics),
             remoteValidationTimeoutMs: readPositiveInteger(raw, 'remote-timeout-ms', diagnostics),
             remoteValidationRetries: readPositiveInteger(raw, 'remote-retries', diagnostics),
             include: readStringArray(raw, 'include', diagnostics),
@@ -41260,6 +41279,19 @@ function readSeverity(raw, key, diagnostics) {
     }
     diagnostics.push({
         message: `Invalid ${key} '${String(value)}'; expected one of ${exports.VALID_SEVERITIES.join(', ')}.`
+    });
+    return undefined;
+}
+function readRemoteTokenPolicy(raw, diagnostics) {
+    const value = raw['remote-token-policy'];
+    if (value === undefined) {
+        return undefined;
+    }
+    if (isRemoteTokenPolicy(value)) {
+        return value;
+    }
+    diagnostics.push({
+        message: `Invalid remote-token-policy '${String(value)}'; expected one of ${exports.VALID_REMOTE_TOKEN_POLICIES.join(', ')}.`
     });
     return undefined;
 }
@@ -41418,6 +41450,9 @@ function readEcosystems(raw, diagnostics) {
 function isSeverity(value) {
     return value === 'low' || value === 'medium' || value === 'high';
 }
+function isRemoteTokenPolicy(value) {
+    return value === 'auto' || value === 'never';
+}
 function isRecord(value) {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
@@ -41552,17 +41587,20 @@ const node_timers_1 = __nccwpck_require__(7997);
 const promises_1 = __nccwpck_require__(8500);
 const js_yaml_1 = __importDefault(__nccwpck_require__(4281));
 const constants_1 = __nccwpck_require__(7242);
+const redaction_1 = __nccwpck_require__(1066);
 const DEFAULT_TIMEOUT_MS = 5000;
 const DEFAULT_RETRIES = 1;
 async function validateRemoteReferences(root, files, config) {
     const references = dedupeRemoteReferences(files.flatMap((file) => collectRemoteReferences(root, file)));
     const cache = new Map();
     const findings = [];
+    const apiBaseUrl = githubApiBaseUrl();
+    const tokenDecision = githubTokenDecision(apiBaseUrl, config);
     for (const reference of references) {
         const key = `${reference.host}/${reference.owner}/${reference.repo}@${reference.sha}`.toLowerCase();
         let result = cache.get(key);
         if (!result) {
-            result = await validateGithubCommit(reference.owner, reference.repo, reference.sha, config);
+            result = await validateGithubCommit(reference.owner, reference.repo, reference.sha, config, apiBaseUrl, tokenDecision.headers);
             cache.set(key, result);
         }
         if (result.status === 'missing') {
@@ -41572,7 +41610,7 @@ async function validateRemoteReferences(root, files, config) {
             findings.push(remoteFinding('remote/validation-error', reference, 'low', `Remote validation for '${reference.owner}/${reference.repo}@${reference.sha}' could not complete: ${result.message}.`, 'Retry later, adjust remote validation timeout/retry settings, or disable remote validation for offline/static-only runs.'));
         }
     }
-    return findings;
+    return { findings, diagnostics: tokenDecision.diagnostics };
 }
 function collectRemoteReferences(root, file) {
     const absolutePath = node_path_1.default.join(root, file);
@@ -41635,12 +41673,12 @@ function collectGithubUrlCommitReferences(file, content, host) {
     }
     return references;
 }
-async function validateGithubCommit(owner, repo, sha, config) {
+async function validateGithubCommit(owner, repo, sha, config, apiBaseUrl, headers) {
     const timeoutMs = config.remoteValidationTimeoutMs ?? DEFAULT_TIMEOUT_MS;
     const retries = config.remoteValidationRetries ?? DEFAULT_RETRIES;
-    const url = githubCommitApiUrl(owner, repo, sha);
+    const url = githubCommitApiUrl(apiBaseUrl, owner, repo, sha);
     for (let attempt = 0; attempt <= retries; attempt += 1) {
-        const result = await fetchGithubCommit(url, timeoutMs);
+        const result = await fetchGithubCommit(url, timeoutMs, headers);
         if (result.status === 'found' || result.status === 'missing') {
             return result;
         }
@@ -41651,8 +41689,7 @@ async function validateGithubCommit(owner, repo, sha, config) {
     }
     return { status: 'error', message: 'validation retry loop exited unexpectedly' };
 }
-function githubCommitApiUrl(owner, repo, sha) {
-    const apiBaseUrl = githubApiBaseUrl();
+function githubCommitApiUrl(apiBaseUrl, owner, repo, sha) {
     return `${apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${sha}`;
 }
 function githubApiBaseUrl() {
@@ -41678,13 +41715,13 @@ function githubServerUrl() {
         return new URL('https://github.com');
     }
 }
-async function fetchGithubCommit(url, timeoutMs) {
+async function fetchGithubCommit(url, timeoutMs, headers) {
     const controller = new AbortController();
     const timeout = (0, node_timers_1.setTimeout)(() => controller.abort(), timeoutMs);
     try {
         const response = await globalThis.fetch(url, {
             method: 'GET',
-            headers: githubHeaders(),
+            headers,
             signal: controller.signal
         });
         if (response.status === 200) {
@@ -41714,16 +41751,44 @@ async function fetchGithubCommit(url, timeoutMs) {
         (0, node_timers_1.clearTimeout)(timeout);
     }
 }
-function githubHeaders() {
+function githubTokenDecision(apiBaseUrl, config) {
     const headers = {
         Accept: 'application/vnd.github+json',
         'User-Agent': 'deterministic-deps'
     };
     const token = process.env.GITHUB_TOKEN;
-    if (token) {
-        headers.Authorization = `Bearer ${token}`;
+    if (!token || config.remoteTokenPolicy === 'never') {
+        return { headers, diagnostics: [] };
     }
-    return headers;
+    if (isTrustedGithubApiBaseUrl(apiBaseUrl)) {
+        headers.Authorization = `Bearer ${token}`;
+        return { headers, diagnostics: [] };
+    }
+    return {
+        headers,
+        diagnostics: [
+            {
+                message: `remote-token-policy auto omitted GITHUB_TOKEN for untrusted GitHub API URL '${(0, redaction_1.sanitizeDisplayValue)(apiBaseUrl)}'. Expected HTTPS api.github.com for GitHub.com or an HTTPS host matching GITHUB_SERVER_URL for GitHub Enterprise Server.`
+            }
+        ]
+    };
+}
+function isTrustedGithubApiBaseUrl(apiBaseUrl) {
+    let apiUrl;
+    try {
+        apiUrl = new URL(apiBaseUrl);
+    }
+    catch {
+        return false;
+    }
+    if (apiUrl.protocol !== 'https:') {
+        return false;
+    }
+    const serverUrl = githubServerUrl();
+    if (serverUrl.hostname.toLowerCase() === 'github.com') {
+        return apiUrl.host.toLowerCase() === 'api.github.com';
+    }
+    return apiUrl.host.toLowerCase() === serverUrl.host.toLowerCase();
 }
 function remoteFinding(ruleId, reference, severity, message, remediation) {
     return {
@@ -43820,12 +43885,16 @@ async function scan(options) {
     const files = await discoverFiles(options.root, options.include, options.exclude, options.config);
     const trackedFiles = new Set(files);
     const staticFindings = files.flatMap((file) => (0, rules_1.evaluateFile)(options.root, file, options.config, trackedFiles));
+    const remoteResult = options.config.remoteValidation === true
+        ? await (0, remote_1.validateRemoteReferences)(options.root, files, options.config)
+        : { findings: [], diagnostics: [] };
     const remoteFindings = options.config.remoteValidation === true
-        ? (0, rules_1.finalizeFindings)(await (0, remote_1.validateRemoteReferences)(options.root, files, options.config), options.config, trackedFiles)
+        ? (0, rules_1.finalizeFindings)(remoteResult.findings, options.config, trackedFiles)
         : [];
     return {
         findings: [...staticFindings, ...remoteFindings],
-        scannedFiles: files
+        scannedFiles: files,
+        diagnostics: remoteResult.diagnostics
     };
 }
 async function discoverFiles(root, include = constants_1.DEFAULT_INCLUDE, exclude = constants_1.DEFAULT_EXCLUDE, config = {}) {
@@ -49800,6 +49869,7 @@ async function run() {
     const sarifInput = (0, config_1.normalizeBooleanInput)(core.getInput('sarif'), 'sarif', true);
     const patchInput = (0, config_1.normalizeBooleanInput)(core.getInput('patch'), 'patch', config.patch ?? false);
     const remoteValidationInput = (0, config_1.normalizeBooleanInput)(core.getInput('remote-validation'), 'remote-validation', config.remoteValidation ?? false);
+    const remoteTokenPolicyInput = (0, config_1.normalizeRemoteTokenPolicyInput)(core.getInput('remote-token-policy'), config.remoteTokenPolicy ?? 'auto');
     const remoteValidationTimeoutMsInput = (0, config_1.normalizePositiveIntegerInput)(core.getInput('remote-timeout-ms'), 'remote-timeout-ms', config.remoteValidationTimeoutMs ?? 5000);
     const remoteValidationRetriesInput = (0, config_1.normalizePositiveIntegerInput)(core.getInput('remote-retries'), 'remote-retries', config.remoteValidationRetries ?? 1);
     for (const diagnostic of [
@@ -49808,6 +49878,7 @@ async function run() {
         ...sarifInput.diagnostics,
         ...patchInput.diagnostics,
         ...remoteValidationInput.diagnostics,
+        ...remoteTokenPolicyInput.diagnostics,
         ...remoteValidationTimeoutMsInput.diagnostics,
         ...remoteValidationRetriesInput.diagnostics
     ]) {
@@ -49820,6 +49891,7 @@ async function run() {
     const sarif = sarifInput.value;
     const patch = patchInput.value;
     const remoteValidation = remoteValidationInput.value;
+    const remoteTokenPolicy = remoteTokenPolicyInput.value;
     const remoteValidationTimeoutMs = remoteValidationTimeoutMsInput.value;
     const remoteValidationRetries = remoteValidationRetriesInput.value;
     const result = await (0, scanner_1.scan)({
@@ -49829,10 +49901,14 @@ async function run() {
         config: {
             ...config,
             remoteValidation,
+            remoteTokenPolicy,
             remoteValidationTimeoutMs,
             remoteValidationRetries
         }
     });
+    for (const diagnostic of result.diagnostics) {
+        core.warning(diagnostic.message);
+    }
     for (const finding of result.findings) {
         core.warning(`${finding.message} ${finding.remediation}`, {
             file: finding.file,

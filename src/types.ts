@@ -1,5 +1,6 @@
 export type Mode = 'advisory' | 'enforce'
 export type Severity = 'low' | 'medium' | 'high'
+export type RemoteTokenPolicy = 'auto' | 'never'
 
 export interface Finding {
   ruleId: string
@@ -31,6 +32,7 @@ export interface Config {
   severityThreshold?: Severity
   patch?: boolean
   remoteValidation?: boolean
+  remoteTokenPolicy?: RemoteTokenPolicy
   remoteValidationTimeoutMs?: number
   remoteValidationRetries?: number
   include?: string[]
@@ -94,6 +96,7 @@ export interface ScanOptions {
 export interface ScanResult {
   findings: Finding[]
   scannedFiles: string[]
+  diagnostics: ConfigDiagnostic[]
 }
 
 export interface ReportResult {

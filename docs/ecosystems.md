@@ -53,7 +53,7 @@ Remote validation is opt in with `remote-validation: true`. When enabled, the sc
 
 Remote validation supports GitHub.com and GitHub Enterprise Server. The scanner uses `GITHUB_API_URL` when present, otherwise it uses `https://api.github.com` for GitHub.com and `<GITHUB_SERVER_URL>/api/v3` for GHES. Git dependency URL matching is limited to the configured `GITHUB_SERVER_URL` host, so remote validation does not attempt to validate refs from non-GitHub forges.
 
-Remote validation does not clone repositories or resolve mutable tags. It uses bounded request timeouts and retries, reports missing refs as high-severity findings, and reports rate limits, authorization failures, timeouts, and transient API errors as low-severity validation errors. Public refs can be checked without credentials; `GITHUB_TOKEN` is used when present for private repository access and higher rate limits on the configured GitHub server.
+Remote validation does not clone repositories or resolve mutable tags. It uses bounded request timeouts and retries, reports missing refs as high-severity findings, and reports rate limits, authorization failures, timeouts, and transient API errors as low-severity validation errors. Public refs can be checked without credentials; by default, `GITHUB_TOKEN` is used only for trusted HTTPS GitHub API hosts. Set `remote-token-policy: never` to omit it for every remote-validation request.
 
 ## Known Limits
 

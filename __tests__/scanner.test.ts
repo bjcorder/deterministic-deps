@@ -429,6 +429,180 @@ describe('deterministic-deps scanner', () => {
     expect(result.findings).toEqual([])
   })
 
+  it('sends GITHUB_TOKEN to trusted GitHub.com API URLs in auto mode', async () => {
+    const root = tempRepo()
+    const sha = '0123456789abcdef0123456789abcdef01234567'
+    const fetchMock = jest.fn().mockResolvedValue({ status: 200 })
+    globalThis.fetch = fetchMock
+    process.env.GITHUB_TOKEN = 'github-token'
+    write(root, '.github/workflows/ci.yml', `steps:\n  - uses: actions/checkout@${sha}\n`)
+
+    const result = await scan({
+      root,
+      include: [],
+      exclude: [],
+      config: { remoteValidation: true, remoteValidationRetries: 0 }
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `https://api.github.com/repos/actions/checkout/commits/${sha}`,
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.objectContaining({ Authorization: 'Bearer github-token' })
+      })
+    )
+    expect(result.findings).toEqual([])
+    expect(result.diagnostics).toEqual([])
+  })
+
+  it('omits GITHUB_TOKEN in never mode', async () => {
+    const root = tempRepo()
+    const sha = '0123456789abcdef0123456789abcdef01234567'
+    const fetchMock = jest.fn().mockResolvedValue({ status: 200 })
+    globalThis.fetch = fetchMock
+    process.env.GITHUB_TOKEN = 'github-token'
+    write(root, '.github/workflows/ci.yml', `steps:\n  - uses: actions/checkout@${sha}\n`)
+
+    const result = await scan({
+      root,
+      include: [],
+      exclude: [],
+      config: {
+        remoteValidation: true,
+        remoteTokenPolicy: 'never',
+        remoteValidationRetries: 0
+      }
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `https://api.github.com/repos/actions/checkout/commits/${sha}`,
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.not.objectContaining({ Authorization: expect.any(String) })
+      })
+    )
+    expect(result.findings).toEqual([])
+    expect(result.diagnostics).toEqual([])
+  })
+
+  it('sends GITHUB_TOKEN to matching HTTPS GitHub Enterprise API hosts in auto mode', async () => {
+    const root = tempRepo()
+    const sha = '0123456789abcdef0123456789abcdef01234567'
+    const fetchMock = jest.fn().mockResolvedValue({ status: 200 })
+    globalThis.fetch = fetchMock
+    process.env.GITHUB_TOKEN = 'ghe-token'
+    process.env.GITHUB_SERVER_URL = 'https://ghe.example.com:8443'
+    process.env.GITHUB_API_URL = 'https://ghe.example.com:8443/api/v3/'
+    write(root, '.github/workflows/ci.yml', `steps:\n  - uses: platform/checkout@${sha}\n`)
+
+    const result = await scan({
+      root,
+      include: [],
+      exclude: [],
+      config: { remoteValidation: true, remoteValidationRetries: 0 }
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `https://ghe.example.com:8443/api/v3/repos/platform/checkout/commits/${sha}`,
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.objectContaining({ Authorization: 'Bearer ghe-token' })
+      })
+    )
+    expect(result.findings).toEqual([])
+    expect(result.diagnostics).toEqual([])
+  })
+
+  it('omits GITHUB_TOKEN and warns for mismatched GitHub Enterprise API hosts in auto mode', async () => {
+    const root = tempRepo()
+    const sha = '0123456789abcdef0123456789abcdef01234567'
+    const fetchMock = jest.fn().mockResolvedValue({ status: 200 })
+    globalThis.fetch = fetchMock
+    process.env.GITHUB_TOKEN = 'ghe-token'
+    process.env.GITHUB_SERVER_URL = 'https://ghe.example.com'
+    process.env.GITHUB_API_URL = 'https://evil.example.com/api/v3'
+    write(root, '.github/workflows/ci.yml', `steps:\n  - uses: platform/checkout@${sha}\n`)
+
+    const result = await scan({
+      root,
+      include: [],
+      exclude: [],
+      config: { remoteValidation: true, remoteValidationRetries: 0 }
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `https://evil.example.com/api/v3/repos/platform/checkout/commits/${sha}`,
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.not.objectContaining({ Authorization: expect.any(String) })
+      })
+    )
+    expect(result.findings).toEqual([])
+    expect(result.diagnostics).toEqual([
+      {
+        message:
+          "remote-token-policy auto omitted GITHUB_TOKEN for untrusted GitHub API URL 'https://evil.example.com/api/v3'. Expected HTTPS api.github.com for GitHub.com or an HTTPS host matching GITHUB_SERVER_URL for GitHub Enterprise Server."
+      }
+    ])
+  })
+
+  it('omits GITHUB_TOKEN and warns for non-HTTPS API URLs in auto mode', async () => {
+    const root = tempRepo()
+    const sha = '0123456789abcdef0123456789abcdef01234567'
+    const fetchMock = jest.fn().mockResolvedValue({ status: 200 })
+    globalThis.fetch = fetchMock
+    process.env.GITHUB_TOKEN = 'github-token'
+    process.env.GITHUB_API_URL = 'http://api.github.com'
+    write(root, '.github/workflows/ci.yml', `steps:\n  - uses: actions/checkout@${sha}\n`)
+
+    const result = await scan({
+      root,
+      include: [],
+      exclude: [],
+      config: { remoteValidation: true, remoteValidationRetries: 0 }
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `http://api.github.com/repos/actions/checkout/commits/${sha}`,
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.not.objectContaining({ Authorization: expect.any(String) })
+      })
+    )
+    expect(result.findings).toEqual([])
+    expect(result.diagnostics).toEqual([
+      {
+        message:
+          "remote-token-policy auto omitted GITHUB_TOKEN for untrusted GitHub API URL 'http://api.github.com'. Expected HTTPS api.github.com for GitHub.com or an HTTPS host matching GITHUB_SERVER_URL for GitHub Enterprise Server."
+      }
+    ])
+  })
+
+  it('omits Authorization without warning when GITHUB_TOKEN is absent', async () => {
+    const root = tempRepo()
+    const sha = '0123456789abcdef0123456789abcdef01234567'
+    const fetchMock = jest.fn().mockResolvedValue({ status: 200 })
+    globalThis.fetch = fetchMock
+    write(root, '.github/workflows/ci.yml', `steps:\n  - uses: actions/checkout@${sha}\n`)
+
+    const result = await scan({
+      root,
+      include: [],
+      exclude: [],
+      config: { remoteValidation: true, remoteValidationRetries: 0 }
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `https://api.github.com/repos/actions/checkout/commits/${sha}`,
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.not.objectContaining({ Authorization: expect.any(String) })
+      })
+    )
+    expect(result.findings).toEqual([])
+    expect(result.diagnostics).toEqual([])
+  })
+
   it('reports missing GitHub Action SHAs when remote validation is enabled', async () => {
     const root = tempRepo()
     const sha = 'ffffffffffffffffffffffffffffffffffffffff'
