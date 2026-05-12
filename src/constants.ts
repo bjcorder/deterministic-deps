@@ -13,6 +13,8 @@ export const DEFAULT_INCLUDE = [
   '**/Pipfile',
   '**/go.mod',
   '**/Cargo.toml',
+  '**/rust-toolchain.toml',
+  '**/rust-toolchain',
   '**/pom.xml',
   '**/build.gradle',
   '**/build.gradle.kts',

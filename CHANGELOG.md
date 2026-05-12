@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 - Added a GitHub Actions runner-label rule that flags floating hosted labels such as
   `ubuntu-latest`, `windows-latest`, and `macos-latest`.
+- Added Rust toolchain file checks for floating `stable`, `beta`, and `nightly` channels.
 - Reduced GitHub Actions token permissions for CI and CodeQL workflows.
 - Added explicit vulnerability reporting links to the security policy.
 - Documented intentional floating Dockerfile fixtures and the Scorecard test-fixture dismissal

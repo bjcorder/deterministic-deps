@@ -60,8 +60,14 @@ Floating hosted runner aliases such as `ubuntu-latest`, `windows-latest`, and `m
 | ------------------------ | -------- | --------------------------------------------------------------------------------------- |
 | `rust/lockfile-required` | high     | `Cargo.toml` requires `Cargo.lock` for deterministic application/workspace builds.      |
 | `rust/git-rev-sha`       | high     | Git dependencies in dependency tables must include `rev = "<40-character commit SHA>"`. |
+| `rust/toolchain-version` | medium   | Rust toolchain files must not use floating `stable`, `beta`, or `nightly` channels.     |
 
 The Rust git revision rule can include a safe patch suggestion when a one-line dependency table already has a full commit SHA in the git URL, such as a `?rev=` query, but lacks the explicit Cargo `rev` field.
+
+Rust toolchain checks inspect `[toolchain] channel` values in `rust-toolchain.toml` and TOML-style
+legacy `rust-toolchain` files, plus one-line legacy `rust-toolchain` files. Exact versions such as
+`1.78.0`, dated channels such as `nightly-2024-05-01`, and custom toolchain names are accepted.
+Malformed or unsupported toolchain file shapes are ignored.
 
 ## JVM
 

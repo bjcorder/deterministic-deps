@@ -1,0 +1,5 @@
+[toolchain]
+# channel = "stable"
+notes = "nightly"
+channel = ["stable"]
+path = "./stable"

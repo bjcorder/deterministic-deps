@@ -1,0 +1,9 @@
+[
+  {
+    "ruleId": "rust/toolchain-version",
+    "ecosystem": "rust",
+    "file": "rust-toolchain.toml",
+    "line": 3,
+    "severity": "medium"
+  }
+]

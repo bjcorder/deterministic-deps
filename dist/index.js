@@ -41447,6 +41447,8 @@ exports.DEFAULT_INCLUDE = [
     '**/Pipfile',
     '**/go.mod',
     '**/Cargo.toml',
+    '**/rust-toolchain.toml',
+    '**/rust-toolchain',
     '**/pom.xml',
     '**/build.gradle',
     '**/build.gradle.kts',
@@ -42017,6 +42019,7 @@ exports.rules = [
     rule('go/git-replace-sha', 'go', 'medium', 'Go replace directives that use git sources require immutable refs.', checkGo),
     rule('rust/lockfile-required', 'rust', 'high', 'Cargo manifests require Cargo.lock for deterministic application builds.', checkRust),
     rule('rust/git-rev-sha', 'rust', 'high', 'Rust git dependencies must include full rev commit SHAs.', checkRust),
+    rule('rust/toolchain-version', 'rust', 'medium', 'Rust toolchain files must avoid floating stable, beta, and nightly channels.', checkRust),
     rule('jvm/dynamic-version', 'jvm', 'medium', 'Maven and Gradle declarations reject dynamic JVM versions unless supported Gradle metadata satisfies policy.', checkJvm),
     rule('ruby/lockfile-required', 'ruby', 'high', 'Gemfiles require Gemfile.lock for deterministic resolution.', checkRuby),
     rule('ruby/git-ref-sha', 'ruby', 'high', 'Ruby git dependencies must pin full ref commit SHAs.', checkRuby),
@@ -42530,6 +42533,9 @@ function hasGoPseudoVersion(value) {
     return /\bv\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?-\d{14}-[a-f0-9]{12}\b/i.test(value);
 }
 function checkRust(context) {
+    if (isRustToolchainFile(context.file)) {
+        return checkRustToolchain(context);
+    }
     if (!context.file.endsWith('Cargo.toml')) {
         return [];
     }
@@ -42547,6 +42553,72 @@ function checkRust(context) {
         }
     }
     return findings;
+}
+function checkRustToolchain(context) {
+    const channel = parseRustToolchainTomlChannel(context.lines) ??
+        (isLegacyRustToolchainFile(context.file)
+            ? parseLegacyRustToolchainChannel(context.lines)
+            : undefined);
+    if (!channel || !isFloatingRustToolchainChannel(channel.value)) {
+        return [];
+    }
+    return [
+        finding('rust/toolchain-version', 'rust', context.file, channel.line, 'medium', `Rust toolchain channel '${channel.value}' can change over time.`, 'Pin the Rust toolchain to an exact version such as "1.78.0" or a dated channel such as "nightly-2024-05-01".')
+    ];
+}
+function parseRustToolchainTomlChannel(lines) {
+    let section = '';
+    for (let index = 0; index < lines.length; index += 1) {
+        const stripped = stripTomlComment(lines[index]).trim();
+        if (!stripped) {
+            continue;
+        }
+        const sectionMatch = stripped.match(/^\[([^\]]+)\]$/);
+        if (sectionMatch) {
+            section = sectionMatch[1].trim();
+            continue;
+        }
+        if (section !== 'toolchain') {
+            continue;
+        }
+        const assignment = stripped.match(/^channel\s*=\s*(.+)$/);
+        if (!assignment) {
+            continue;
+        }
+        const value = normalizeTomlScalar(assignment[1]);
+        return value ? { value, line: index + 1 } : undefined;
+    }
+    return undefined;
+}
+function parseLegacyRustToolchainChannel(lines) {
+    const entries = lines
+        .map((line, index) => ({
+        text: stripTomlComment(line).trim(),
+        line: index + 1
+    }))
+        .filter((entry) => entry.text.length > 0);
+    if (entries.length !== 1 || entries[0].text.startsWith('[') || entries[0].text.includes('=')) {
+        return undefined;
+    }
+    const value = normalizeTomlScalar(entries[0].text);
+    return value ? { value, line: entries[0].line } : undefined;
+}
+function normalizeTomlScalar(value) {
+    const trimmed = value.trim().replace(/,$/, '').trim();
+    const quoted = trimmed.match(/^(['"])(.*)\1$/);
+    if (quoted) {
+        return quoted[2].trim();
+    }
+    return /^[A-Za-z0-9_.+-]+$/.test(trimmed) ? trimmed : undefined;
+}
+function isFloatingRustToolchainChannel(value) {
+    const normalized = value.trim().toLowerCase();
+    const channel = normalized.match(/^(stable|beta|nightly)(?:-(.+))?$/);
+    if (!channel) {
+        return false;
+    }
+    const qualifier = channel[2];
+    return !qualifier || !/^\d{4}-\d{2}-\d{2}(?:-.+)?$/.test(qualifier);
 }
 function parseRustDependencyEntries(lines) {
     const entries = [];
@@ -42985,6 +43057,12 @@ function parenDelta(line) {
 }
 function isWorkflowOrActionFile(file) {
     return file.startsWith('.github/workflows/') || /^action\.ya?ml$/i.test(file);
+}
+function isRustToolchainFile(file) {
+    return file.endsWith('rust-toolchain.toml') || isLegacyRustToolchainFile(file);
+}
+function isLegacyRustToolchainFile(file) {
+    return file === 'rust-toolchain' || file.endsWith('/rust-toolchain');
 }
 function isDockerLikeFile(file) {
     const normalized = file.replaceAll('\\', '/');
