@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## Unreleased
 
 - Reduced GitHub Actions token permissions for CI and CodeQL workflows.
+- Removed vulnerable real package names from parser fixtures to reduce security alert noise.
 - Polished post-release docs with canonical Marketplace, release, install, and schema links.
 - Improved early v1 feedback intake and maintainer triage guidance for false positives,
   confusing findings, and setup friction.

@@ -1,10 +1,10 @@
 [project]
 dependencies = [
-  "requests==2.32.0",
+  "examplepkg==2.32.0",
   "acme @ git+https://github.com/acme/pkg.git@0123456789abcdef0123456789abcdef01234567",
 ]
 
 [project.optional-dependencies]
 dev = [
-  "pytest==8.3.4",
+  "exampletest==8.3.4",
 ]
