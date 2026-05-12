@@ -84,6 +84,15 @@ README or relevant `docs/` page. Keep patch behavior backwards-compatible and no
 Defer new ecosystems, new rule ids, new config fields, and stricter default behavior to minor
 releases unless a separate issue explicitly accepts that scope.
 
+## Security Alert Triage
+
+The Dockerfiles under `__tests__/fixtures/config/rule-controls/` and
+`__tests__/fixtures/containers/floating-images/` intentionally keep `FROM node:latest` so the
+fixture matrix exercises `containers/image-digest` findings. If OpenSSF Scorecard reports these
+fixture paths as `PinnedDependenciesID` code scanning alerts, dismiss them as `used in tests` with a
+comment that they are intentional deterministic-deps fixtures. Do not pin those images unless
+replacement positive coverage is added first.
+
 ## Release Notes Checklist
 
 The `CHANGELOG.md` entry for a v1 release should identify:
