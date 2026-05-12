@@ -9,6 +9,7 @@ import {
   SHA_PATTERN,
   SHORT_SHA_PATTERN
 } from '../constants'
+import { sanitizeFinding } from '../redaction'
 import { Config, Finding, Severity } from '../types'
 
 interface FileContext {
@@ -271,6 +272,7 @@ export function evaluateFile(
   return uniqueRuleHandlers()
     .flatMap((handler) => handler(context))
     .map((finding) => applySeverityOverride(finding, config))
+    .map(sanitizeFinding)
     .filter((finding) => shouldKeepFinding(finding, config, trackedFiles))
 }
 
@@ -281,6 +283,7 @@ export function finalizeFindings(
 ): Finding[] {
   return findings
     .map((finding) => applySeverityOverride(finding, config))
+    .map(sanitizeFinding)
     .filter((finding) => shouldKeepFinding(finding, config, trackedFiles))
 }
 

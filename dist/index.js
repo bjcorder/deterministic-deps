@@ -41478,6 +41478,64 @@ exports.SEVERITY_ORDER = {
 
 /***/ }),
 
+/***/ 1066:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.sanitizeDisplayValue = sanitizeDisplayValue;
+exports.sanitizeFinding = sanitizeFinding;
+exports.containsCredentialMaterial = containsCredentialMaterial;
+const REDACTED = '[REDACTED]';
+const SENSITIVE_QUERY_KEYS = [
+    'token',
+    'access_token',
+    'password',
+    'passwd',
+    'pwd',
+    'secret',
+    'client_secret',
+    'api_key',
+    'apikey',
+    'key',
+    'auth',
+    'authorization',
+    'signature',
+    'sig'
+];
+const SENSITIVE_QUERY_PATTERN = new RegExp(`([?&;])(${SENSITIVE_QUERY_KEYS.map(escapeRegExp).join('|')})(=)([^&#\\s'"<>)]*)`, 'gi');
+function sanitizeDisplayValue(value) {
+    return value
+        .replace(/\b([A-Za-z][A-Za-z0-9+.-]*:\/\/)([^/\s'"<>@]+@)/g, `$1${REDACTED}@`)
+        .replace(/\b([^/\s'"<>:@]+:[^/\s'"<>@]+@)([A-Za-z0-9.-]+(?::\d+)?\/)/g, `${REDACTED}@$2`)
+        .replace(SENSITIVE_QUERY_PATTERN, `$1$2$3${REDACTED}`)
+        .replace(/\b(Authorization\s*[:=]\s*)(Bearer|Basic)?\s*[^,\s'"<>)}\]]+/gi, (_match, prefix, scheme) => `${prefix}${scheme ? `${scheme} ` : ''}${REDACTED}`)
+        .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi, `$1 ${REDACTED}`);
+}
+function sanitizeFinding(finding) {
+    return {
+        ...finding,
+        message: sanitizeDisplayValue(finding.message),
+        remediation: sanitizeDisplayValue(finding.remediation),
+        suggestion: finding.suggestion
+            ? {
+                ...finding.suggestion,
+                title: sanitizeDisplayValue(finding.suggestion.title)
+            }
+            : undefined
+    };
+}
+function containsCredentialMaterial(value) {
+    return sanitizeDisplayValue(value) !== value;
+}
+function escapeRegExp(value) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+
+/***/ }),
+
 /***/ 6473:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -41748,6 +41806,7 @@ exports.renderPatch = renderPatch;
 const node_fs_1 = __importDefault(__nccwpck_require__(3024));
 const node_crypto_1 = __importDefault(__nccwpck_require__(7598));
 const node_path_1 = __importDefault(__nccwpck_require__(6760));
+const redaction_1 = __nccwpck_require__(1066);
 const rules_1 = __nccwpck_require__(5755);
 const RULES_HELP_URI = 'https://github.com/bjcorder/deterministic-deps/blob/main/docs/rules.md';
 function countBySeverity(findings) {
@@ -41792,7 +41851,7 @@ function renderMarkdown(findings) {
     lines.push('| Severity | Rule | Ecosystem | Location | Message | Remediation |');
     lines.push('| --- | --- | --- | --- | --- | --- |');
     for (const finding of findings) {
-        lines.push(`| ${finding.severity} | ${finding.ruleId} | ${finding.ecosystem} | ${finding.file}:${finding.line} | ${escapeMarkdown(finding.message)} | ${escapeMarkdown(finding.remediation)} |`);
+        lines.push(`| ${finding.severity} | ${finding.ruleId} | ${finding.ecosystem} | ${finding.file}:${finding.line} | ${escapeMarkdown((0, redaction_1.sanitizeDisplayValue)(finding.message))} | ${escapeMarkdown((0, redaction_1.sanitizeDisplayValue)(finding.remediation))} |`);
     }
     const suggestions = findings.filter((finding) => finding.suggestion);
     if (suggestions.length > 0) {
@@ -41802,9 +41861,10 @@ function renderMarkdown(findings) {
             if (!suggestion) {
                 continue;
             }
-            lines.push(`- ${finding.file}:${finding.line} ${escapeMarkdown(suggestion.title)} (confidence: ${suggestion.confidence}; safe patch: ${suggestion.safeToApply ? 'yes' : 'no'})`);
-            if (suggestion.replacement) {
-                lines.push(`  - Replace line ${suggestion.replacement.line} with: \`${escapeMarkdown(suggestion.replacement.newText)}\``);
+            const replacement = safeReplacement(finding);
+            lines.push(`- ${finding.file}:${finding.line} ${escapeMarkdown((0, redaction_1.sanitizeDisplayValue)(suggestion.title))} (confidence: ${suggestion.confidence}; safe patch: ${replacement ? 'yes' : 'no'})`);
+            if (replacement) {
+                lines.push(`  - Replace line ${replacement.line} with: \`${escapeMarkdown((0, redaction_1.sanitizeDisplayValue)(replacement.newText))}\``);
             }
         }
     }
@@ -41830,7 +41890,7 @@ function renderSarif(findings) {
                         ruleId: finding.ruleId,
                         level: sarifLevel(finding.severity),
                         message: {
-                            text: `${finding.message} ${finding.remediation}`
+                            text: (0, redaction_1.sanitizeDisplayValue)(`${finding.message} ${finding.remediation}`)
                         },
                         locations: [
                             {
@@ -41855,7 +41915,7 @@ function renderSarif(findings) {
                         result.fixes = [
                             {
                                 description: {
-                                    text: finding.suggestion?.title ?? finding.remediation
+                                    text: (0, redaction_1.sanitizeDisplayValue)(finding.suggestion?.title ?? finding.remediation)
                                 },
                                 artifactChanges: [
                                     {
@@ -41869,7 +41929,7 @@ function renderSarif(findings) {
                                                     endLine: replacement.line
                                                 },
                                                 insertedContent: {
-                                                    text: `${replacement.newText}\n`
+                                                    text: `${(0, redaction_1.sanitizeDisplayValue)(replacement.newText)}\n`
                                                 }
                                             }
                                         ]
@@ -41929,7 +41989,7 @@ function sarifFingerprints(finding) {
             finding.ruleId,
             finding.file,
             finding.line.toString(),
-            finding.message
+            (0, redaction_1.sanitizeDisplayValue)(finding.message)
         ].join('\0'))
     };
 }
@@ -41956,7 +42016,14 @@ function safeReplacement(finding) {
     if (!suggestion?.safeToApply || !suggestion.replacement) {
         return undefined;
     }
+    if (replacementContainsCredentialMaterial(suggestion.replacement)) {
+        return undefined;
+    }
     return suggestion.replacement;
+}
+function replacementContainsCredentialMaterial(replacement) {
+    return ((0, redaction_1.containsCredentialMaterial)(replacement.oldText) ||
+        (0, redaction_1.containsCredentialMaterial)(replacement.newText));
 }
 function replacementMatchesFile(root, replacement) {
     const filePath = node_path_1.default.join(root, replacement.file);
@@ -42001,6 +42068,7 @@ const node_path_1 = __importDefault(__nccwpck_require__(6760));
 const js_yaml_1 = __importDefault(__nccwpck_require__(4281));
 const minimatch_1 = __nccwpck_require__(6507);
 const constants_1 = __nccwpck_require__(7242);
+const redaction_1 = __nccwpck_require__(1066);
 exports.rules = [
     rule('github-actions/sha-pin', 'github-actions', 'high', 'External GitHub Actions references must use full commit SHA refs.', checkGithubActions),
     rule('github-actions/full-sha', 'github-actions', 'high', 'Short GitHub Actions SHAs are rejected because they are not explicit enough.', checkGithubActions),
@@ -42040,11 +42108,13 @@ function evaluateFile(root, file, config, trackedFiles) {
     return uniqueRuleHandlers()
         .flatMap((handler) => handler(context))
         .map((finding) => applySeverityOverride(finding, config))
+        .map(redaction_1.sanitizeFinding)
         .filter((finding) => shouldKeepFinding(finding, config, trackedFiles));
 }
 function finalizeFindings(findings, config, trackedFiles) {
     return findings
         .map((finding) => applySeverityOverride(finding, config))
+        .map(redaction_1.sanitizeFinding)
         .filter((finding) => shouldKeepFinding(finding, config, trackedFiles));
 }
 function shouldKeepFinding(finding, config, trackedFiles) {

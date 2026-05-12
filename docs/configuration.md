@@ -173,3 +173,4 @@ Public commits can be checked without credentials. If `GITHUB_TOKEN` is availabl
 Patch output is disabled by default. Set `patch: true` or the `patch` action input to write `deterministic-deps-report/suggestions.patch` and expose its path as `patch-path`.
 
 Patch output never mutates repository files. It only includes suggestions marked safe for exact line replacement, and it skips a suggestion if the current file line no longer matches the finding metadata. Unsupported findings still appear in Markdown and SARIF reports without a patch hunk.
+Credential-bearing replacement lines are also skipped so patch files do not preserve committed secrets.

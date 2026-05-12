@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import crypto from 'node:crypto'
 import path from 'node:path'
+import { containsCredentialMaterial, sanitizeDisplayValue } from './redaction'
 import { Finding, LineReplacement, ReportResult, Severity } from './types'
 import { Rule, rules as ruleRegistry } from './rules'
 
@@ -63,7 +64,7 @@ export function renderMarkdown(findings: Finding[]): string {
   lines.push('| --- | --- | --- | --- | --- | --- |')
   for (const finding of findings) {
     lines.push(
-      `| ${finding.severity} | ${finding.ruleId} | ${finding.ecosystem} | ${finding.file}:${finding.line} | ${escapeMarkdown(finding.message)} | ${escapeMarkdown(finding.remediation)} |`
+      `| ${finding.severity} | ${finding.ruleId} | ${finding.ecosystem} | ${finding.file}:${finding.line} | ${escapeMarkdown(sanitizeDisplayValue(finding.message))} | ${escapeMarkdown(sanitizeDisplayValue(finding.remediation))} |`
     )
   }
 
@@ -75,12 +76,13 @@ export function renderMarkdown(findings: Finding[]): string {
       if (!suggestion) {
         continue
       }
+      const replacement = safeReplacement(finding)
       lines.push(
-        `- ${finding.file}:${finding.line} ${escapeMarkdown(suggestion.title)} (confidence: ${suggestion.confidence}; safe patch: ${suggestion.safeToApply ? 'yes' : 'no'})`
+        `- ${finding.file}:${finding.line} ${escapeMarkdown(sanitizeDisplayValue(suggestion.title))} (confidence: ${suggestion.confidence}; safe patch: ${replacement ? 'yes' : 'no'})`
       )
-      if (suggestion.replacement) {
+      if (replacement) {
         lines.push(
-          `  - Replace line ${suggestion.replacement.line} with: \`${escapeMarkdown(suggestion.replacement.newText)}\``
+          `  - Replace line ${replacement.line} with: \`${escapeMarkdown(sanitizeDisplayValue(replacement.newText))}\``
         )
       }
     }
@@ -112,7 +114,7 @@ export function renderSarif(findings: Finding[]): object {
             ruleId: finding.ruleId,
             level: sarifLevel(finding.severity),
             message: {
-              text: `${finding.message} ${finding.remediation}`
+              text: sanitizeDisplayValue(`${finding.message} ${finding.remediation}`)
             },
             locations: [
               {
@@ -138,7 +140,7 @@ export function renderSarif(findings: Finding[]): object {
             result.fixes = [
               {
                 description: {
-                  text: finding.suggestion?.title ?? finding.remediation
+                  text: sanitizeDisplayValue(finding.suggestion?.title ?? finding.remediation)
                 },
                 artifactChanges: [
                   {
@@ -152,7 +154,7 @@ export function renderSarif(findings: Finding[]): object {
                           endLine: replacement.line
                         },
                         insertedContent: {
-                          text: `${replacement.newText}\n`
+                          text: `${sanitizeDisplayValue(replacement.newText)}\n`
                         }
                       }
                     ]
@@ -220,7 +222,7 @@ function sarifFingerprints(finding: Finding): Record<string, string> {
         finding.ruleId,
         finding.file,
         finding.line.toString(),
-        finding.message
+        sanitizeDisplayValue(finding.message)
       ].join('\0')
     )
   }
@@ -262,7 +264,18 @@ function safeReplacement(finding: Finding): LineReplacement | undefined {
     return undefined
   }
 
+  if (replacementContainsCredentialMaterial(suggestion.replacement)) {
+    return undefined
+  }
+
   return suggestion.replacement
+}
+
+function replacementContainsCredentialMaterial(replacement: LineReplacement): boolean {
+  return (
+    containsCredentialMaterial(replacement.oldText) ||
+    containsCredentialMaterial(replacement.newText)
+  )
 }
 
 function replacementMatchesFile(root: string, replacement: LineReplacement): boolean {

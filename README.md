@@ -180,6 +180,7 @@ server for higher rate limits and private repository access.
 Findings may include structured suggestions when the scanner can point to a precise replacement. Markdown reports show these suggestions, SARIF includes `fixes` for safe exact-line replacements, and `patch: true` writes a unified diff to `deterministic-deps-report/suggestions.patch` without modifying source files.
 
 Suggestions are intentionally conservative. The action does not resolve latest SHAs, tags, versions, or digests automatically, so most findings remain guidance-only until a deterministic replacement is already present in the source.
+Credential-bearing dependency strings are redacted in findings and reports. Patch and SARIF fix output skips credential-bearing replacements because those formats preserve source lines.
 
 ## Configuration
 
