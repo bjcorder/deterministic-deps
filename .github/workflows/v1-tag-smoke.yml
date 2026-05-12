@@ -46,6 +46,7 @@ jobs:
           }
           JSON
 
+          # Keep this as a safe patch case: full SHA in the URL, no explicit Cargo rev field.
           cat > smoke/patch/Cargo.toml <<'TOML'
           [package]
           name = "patch-smoke"
