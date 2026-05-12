@@ -217,6 +217,14 @@ See [docs/configuration.md](docs/configuration.md) for the full schema.
 - Parser coverage is intentionally focused on common dependency declarations; use `allowlist`,
   `rules`, and `ecosystems` configuration for repository-specific policy exceptions.
 
+## Feedback
+
+Please open a
+[bug report](https://github.com/bjcorder/deterministic-deps/issues/new?template=bug_report.yml)
+for false positives, false negatives, confusing remediation, setup friction, or action failures.
+Include the relevant dependency snippet, rule id or ecosystem when known, action inputs or
+`.deterministic-deps.yml`, and the report or log excerpt so the case can be reproduced.
+
 ## Local Development
 
 ```bash

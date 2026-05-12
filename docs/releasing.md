@@ -71,6 +71,19 @@ without requiring any code changes after the tag exists.
 
 Do not move `v1` before the semantic tag smoke test passes.
 
+## Early v1 Feedback Triage
+
+For the first v1 patch releases, prioritize user reports that make the action quieter, clearer, or
+easier to adopt without expanding default scope. False positives, confusing remediation, and setup
+friction should generally outrank new feature requests.
+
+Split actionable reports into focused issues with fixture or documentation acceptance criteria.
+False-positive fixes should include regression fixtures, and docs/setup fixes should update the
+README or relevant `docs/` page. Keep patch behavior backwards-compatible and noise-reducing.
+
+Defer new ecosystems, new rule ids, new config fields, and stricter default behavior to minor
+releases unless a separate issue explicitly accepts that scope.
+
 ## Release Notes Checklist
 
 The `CHANGELOG.md` entry for a v1 release should identify:
