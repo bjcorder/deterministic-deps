@@ -22,15 +22,20 @@ jobs:
       security-events: write
     steps:
       - uses: actions/checkout@<full-commit-sha>
-      - uses: bjcorder/deterministic-deps@v1
+      - uses: Ozark-Security-Labs/deterministic-deps@v1
         with:
           mode: advisory
 ```
 
+Install from the
+[GitHub Marketplace listing](https://github.com/marketplace/actions/deterministic-deps), or review
+the [latest release](https://github.com/Ozark-Security-Labs/deterministic-deps/releases/latest)
+before pinning a validated version.
+
 To fail builds once findings are actionable:
 
 ```yaml
-- uses: bjcorder/deterministic-deps@v1
+- uses: Ozark-Security-Labs/deterministic-deps@v1
   with:
     mode: enforce
     severity-threshold: medium
@@ -57,7 +62,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - id: deterministic-deps
-        uses: bjcorder/deterministic-deps@v1
+        uses: Ozark-Security-Labs/deterministic-deps@v1
         with:
           mode: advisory
           sarif: true
@@ -87,7 +92,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - id: deterministic-deps
-        uses: bjcorder/deterministic-deps@v1
+        uses: Ozark-Security-Labs/deterministic-deps@v1
         continue-on-error: true
         with:
           mode: enforce
@@ -103,8 +108,8 @@ jobs:
         run: exit 1
 ```
 
-The Marketplace entrypoint is `bjcorder/deterministic-deps@v1`. For workflows that enforce policy,
-pin to the full commit SHA for the validated release behind `v1`. See
+The Marketplace entrypoint is `Ozark-Security-Labs/deterministic-deps@v1`. For workflows that
+enforce policy, pin to the full commit SHA for the validated release behind `v1`. See
 [docs/sarif.md](docs/sarif.md) for permissions, private repository notes, SARIF upload, and report
 path details.
 
@@ -220,7 +225,7 @@ See [docs/configuration.md](docs/configuration.md) for the full schema.
 ## Feedback
 
 Please open a
-[bug report](https://github.com/bjcorder/deterministic-deps/issues/new?template=bug_report.yml)
+[bug report](https://github.com/Ozark-Security-Labs/deterministic-deps/issues/new?template=bug_report.yml)
 for false positives, false negatives, confusing remediation, setup friction, or action failures.
 Include the relevant dependency snippet, rule id or ecosystem when known, action inputs or
 `.deterministic-deps.yml`, and the report or log excerpt so the case can be reproduced.

@@ -3,6 +3,9 @@
 `deterministic-deps` v1.0.0 is the first stable Marketplace-ready release of the packaged GitHub
 Action.
 
+- Marketplace: <https://github.com/marketplace/actions/deterministic-deps>
+- Release: <https://github.com/Ozark-Security-Labs/deterministic-deps/releases/tag/v1.0.0>
+
 ## Highlights
 
 - Advisory mode by default, with enforce mode available when projects are ready to fail CI.

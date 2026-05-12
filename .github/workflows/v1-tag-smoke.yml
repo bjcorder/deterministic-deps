@@ -18,7 +18,7 @@ jobs:
       - name: Check out candidate action
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          repository: bjcorder/deterministic-deps
+          repository: Ozark-Security-Labs/deterministic-deps
           ref: ${{ inputs.action-ref }}
           path: candidate-action
 
