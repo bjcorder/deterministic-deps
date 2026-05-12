@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## Unreleased
 
 - Reduced GitHub Actions token permissions for CI and CodeQL workflows.
+- Added explicit vulnerability reporting links to the security policy.
 - Documented intentional floating Dockerfile fixtures and the Scorecard test-fixture dismissal
   rationale.
 - Removed vulnerable real package names from parser fixtures to reduce security alert noise.
