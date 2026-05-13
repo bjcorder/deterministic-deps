@@ -24,6 +24,13 @@ export const ECOSYSTEM_OPTIONS: Record<string, string[]> = {
   terraform: ['requireProviderLock']
 }
 
+// Defense-in-depth caps. The workflow author controls these inputs in practice,
+// but bounding them keeps a misconfigured value from hanging the runner or
+// exhausting memory during YAML parsing.
+export const MAX_CONFIG_FILE_BYTES = 1_048_576
+export const MAX_REMOTE_TIMEOUT_MS = 60_000
+export const MAX_REMOTE_RETRIES = 10
+
 export function splitPatterns(value?: string): string[] {
   if (!value) {
     return []
@@ -33,14 +40,6 @@ export function splitPatterns(value?: string): string[] {
     .split(/[\n,]/)
     .map((part) => part.trim())
     .filter(Boolean)
-}
-
-export function normalizeMode(value: string | undefined, fallback: Mode = 'advisory'): Mode {
-  if (value === 'advisory' || value === 'enforce') {
-    return value
-  }
-
-  return fallback
 }
 
 export function normalizeModeInput(
@@ -66,14 +65,6 @@ export function normalizeModeInput(
   }
 }
 
-export function normalizeSeverity(value: string | undefined, fallback: Severity = 'low'): Severity {
-  if (value === 'low' || value === 'medium' || value === 'high') {
-    return value
-  }
-
-  return fallback
-}
-
 export function normalizeSeverityInput(
   value: string | undefined,
   fallback: Severity = 'low',
@@ -95,22 +86,6 @@ export function normalizeSeverityInput(
       }
     ]
   }
-}
-
-export function normalizeBoolean(value: string | undefined, fallback: boolean): boolean {
-  if (value === undefined || value === '') {
-    return fallback
-  }
-
-  const normalized = value.toLowerCase()
-  if (normalized === 'true') {
-    return true
-  }
-  if (normalized === 'false') {
-    return false
-  }
-
-  return fallback
 }
 
 export function normalizeBooleanInput(
@@ -140,23 +115,11 @@ export function normalizeBooleanInput(
   }
 }
 
-export function normalizePositiveInteger(value: string | undefined, fallback: number): number {
-  if (value === undefined || value === '') {
-    return fallback
-  }
-
-  if (!/^\d+$/.test(value)) {
-    return fallback
-  }
-
-  const parsed = Number.parseInt(value, 10)
-  return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback
-}
-
 export function normalizePositiveIntegerInput(
   value: string | undefined,
   key: string,
-  fallback: number
+  fallback: number,
+  max?: number
 ): { value: number; diagnostics: ConfigDiagnostic[] } {
   if (value === undefined || value === '') {
     return { value: fallback, diagnostics: [] }
@@ -174,18 +137,29 @@ export function normalizePositiveIntegerInput(
   }
 
   const parsed = Number.parseInt(value, 10)
-  if (Number.isInteger(parsed) && parsed >= 0) {
-    return { value: parsed, diagnostics: [] }
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    return {
+      value: fallback,
+      diagnostics: [
+        {
+          message: `Invalid action input ${key}; expected a non-negative integer. Falling back to ${fallback}.`
+        }
+      ]
+    }
   }
 
-  return {
-    value: fallback,
-    diagnostics: [
-      {
-        message: `Invalid action input ${key}; expected a non-negative integer. Falling back to ${fallback}.`
-      }
-    ]
+  if (max !== undefined && parsed > max) {
+    return {
+      value: max,
+      diagnostics: [
+        {
+          message: `Action input ${key} (${parsed}) exceeds maximum ${max}; clamping to ${max}.`
+        }
+      ]
+    }
   }
+
+  return { value: parsed, diagnostics: [] }
 }
 
 export function normalizeRemoteTokenPolicyInput(
@@ -217,8 +191,46 @@ export function loadConfig(root: string, configPath: string): Config {
 
 export function loadConfigWithDiagnostics(root: string, configPath: string): ConfigLoadResult {
   const resolved = path.resolve(root, configPath)
+
+  // Defense-in-depth: refuse a config path that escapes the workspace root.
+  const relative = path.relative(root, resolved)
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    return {
+      config: {},
+      diagnostics: [
+        {
+          message: `Refusing to load config '${configPath}' because it resolves outside the workspace root.`
+        }
+      ]
+    }
+  }
+
   if (!fs.existsSync(resolved)) {
     return { config: {}, diagnostics: [] }
+  }
+
+  let stat: fs.Stats
+  try {
+    stat = fs.statSync(resolved)
+  } catch (error) {
+    return {
+      config: {},
+      diagnostics: [
+        {
+          message: `Unable to stat config '${configPath}': ${error instanceof Error ? error.message : String(error)}.`
+        }
+      ]
+    }
+  }
+  if (stat.size > MAX_CONFIG_FILE_BYTES) {
+    return {
+      config: {},
+      diagnostics: [
+        {
+          message: `Refusing to load config '${configPath}' (${stat.size} bytes) because it exceeds the ${MAX_CONFIG_FILE_BYTES}-byte limit.`
+        }
+      ]
+    }
   }
 
   const rawContent = fs.readFileSync(resolved, 'utf8')
@@ -240,8 +252,18 @@ export function loadConfigWithDiagnostics(root: string, configPath: string): Con
       patch: readBoolean(raw, 'patch', diagnostics),
       remoteValidation: readBoolean(raw, 'remote-validation', diagnostics),
       remoteTokenPolicy: readRemoteTokenPolicy(raw, diagnostics),
-      remoteValidationTimeoutMs: readPositiveInteger(raw, 'remote-timeout-ms', diagnostics),
-      remoteValidationRetries: readPositiveInteger(raw, 'remote-retries', diagnostics),
+      remoteValidationTimeoutMs: readPositiveInteger(
+        raw,
+        'remote-timeout-ms',
+        diagnostics,
+        MAX_REMOTE_TIMEOUT_MS
+      ),
+      remoteValidationRetries: readPositiveInteger(
+        raw,
+        'remote-retries',
+        diagnostics,
+        MAX_REMOTE_RETRIES
+      ),
       include: readStringArray(raw, 'include', diagnostics),
       exclude: readStringArray(raw, 'exclude', diagnostics),
       rules: readBooleanRecord(raw, 'rules', diagnostics),
@@ -255,7 +277,9 @@ export function loadConfigWithDiagnostics(root: string, configPath: string): Con
 
 function parseYamlConfig(content: string, configPath: string): unknown {
   try {
-    return yaml.load(content)
+    // js-yaml v4's default is already safe; pinning JSON_SCHEMA makes the
+    // intent explicit and immune to future default-schema changes.
+    return yaml.load(content, { schema: yaml.JSON_SCHEMA })
   } catch (error) {
     throw new Error(
       `Unable to parse ${configPath}: ${error instanceof Error ? error.message : String(error)}`,
@@ -362,21 +386,29 @@ function readBoolean(
 function readPositiveInteger(
   raw: Record<string, unknown>,
   key: string,
-  diagnostics: ConfigDiagnostic[]
+  diagnostics: ConfigDiagnostic[],
+  max?: number
 ): number | undefined {
   const value = raw[key]
   if (value === undefined) {
     return undefined
   }
 
-  if (typeof value === 'number' && Number.isInteger(value) && value >= 0) {
-    return value
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    diagnostics.push({
+      message: `Invalid ${key}; expected a non-negative integer.`
+    })
+    return undefined
   }
 
-  diagnostics.push({
-    message: `Invalid ${key}; expected a non-negative integer.`
-  })
-  return undefined
+  if (max !== undefined && value > max) {
+    diagnostics.push({
+      message: `${key} (${value}) exceeds maximum ${max}; clamping to ${max}.`
+    })
+    return max
+  }
+
+  return value
 }
 
 function readBooleanRecord(
@@ -526,11 +558,13 @@ function readEcosystems(
 }
 
 function isSeverity(value: unknown): value is Severity {
-  return value === 'low' || value === 'medium' || value === 'high'
+  return typeof value === 'string' && (VALID_SEVERITIES as readonly string[]).includes(value)
 }
 
 function isRemoteTokenPolicy(value: unknown): value is RemoteTokenPolicy {
-  return value === 'auto' || value === 'never'
+  return (
+    typeof value === 'string' && (VALID_REMOTE_TOKEN_POLICIES as readonly string[]).includes(value)
+  )
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

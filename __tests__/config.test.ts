@@ -5,6 +5,9 @@ import Ajv2020 from 'ajv/dist/2020'
 import yaml from 'js-yaml'
 import {
   ECOSYSTEM_OPTIONS,
+  MAX_CONFIG_FILE_BYTES,
+  MAX_REMOTE_RETRIES,
+  MAX_REMOTE_TIMEOUT_MS,
   VALID_MODES,
   VALID_REMOTE_TOKEN_POLICIES,
   VALID_SEVERITIES,
@@ -302,6 +305,95 @@ describe('configuration', () => {
         ' must NOT have additional properties'
       ])
     )
+  })
+
+  it('clamps remote timeout and retries that exceed the configured maximums', () => {
+    const timeoutResult = normalizePositiveIntegerInput(
+      String(MAX_REMOTE_TIMEOUT_MS + 1),
+      'remote-timeout-ms',
+      5000,
+      MAX_REMOTE_TIMEOUT_MS
+    )
+    const retriesResult = normalizePositiveIntegerInput(
+      String(MAX_REMOTE_RETRIES + 5),
+      'remote-retries',
+      1,
+      MAX_REMOTE_RETRIES
+    )
+
+    expect(timeoutResult.value).toBe(MAX_REMOTE_TIMEOUT_MS)
+    expect(timeoutResult.diagnostics).toEqual([
+      {
+        message: `Action input remote-timeout-ms (${MAX_REMOTE_TIMEOUT_MS + 1}) exceeds maximum ${MAX_REMOTE_TIMEOUT_MS}; clamping to ${MAX_REMOTE_TIMEOUT_MS}.`
+      }
+    ])
+    expect(retriesResult.value).toBe(MAX_REMOTE_RETRIES)
+    expect(retriesResult.diagnostics).toEqual([
+      {
+        message: `Action input remote-retries (${MAX_REMOTE_RETRIES + 5}) exceeds maximum ${MAX_REMOTE_RETRIES}; clamping to ${MAX_REMOTE_RETRIES}.`
+      }
+    ])
+  })
+
+  it('accepts values at or below the configured maximum without diagnostics', () => {
+    expect(
+      normalizePositiveIntegerInput(
+        String(MAX_REMOTE_TIMEOUT_MS),
+        'remote-timeout-ms',
+        5000,
+        MAX_REMOTE_TIMEOUT_MS
+      )
+    ).toEqual({ value: MAX_REMOTE_TIMEOUT_MS, diagnostics: [] })
+  })
+
+  it('clamps remote timeout values loaded from the YAML config', () => {
+    const root = tempRepo()
+    fs.writeFileSync(
+      path.join(root, '.deterministic-deps.yml'),
+      `remote-timeout-ms: ${MAX_REMOTE_TIMEOUT_MS + 10000}\nremote-retries: ${MAX_REMOTE_RETRIES + 5}\n`,
+      'utf8'
+    )
+
+    const result = loadConfigWithDiagnostics(root, '.deterministic-deps.yml')
+
+    expect(result.config.remoteValidationTimeoutMs).toBe(MAX_REMOTE_TIMEOUT_MS)
+    expect(result.config.remoteValidationRetries).toBe(MAX_REMOTE_RETRIES)
+    expect(result.diagnostics.map((diagnostic) => diagnostic.message)).toEqual(
+      expect.arrayContaining([
+        `remote-timeout-ms (${MAX_REMOTE_TIMEOUT_MS + 10000}) exceeds maximum ${MAX_REMOTE_TIMEOUT_MS}; clamping to ${MAX_REMOTE_TIMEOUT_MS}.`,
+        `remote-retries (${MAX_REMOTE_RETRIES + 5}) exceeds maximum ${MAX_REMOTE_RETRIES}; clamping to ${MAX_REMOTE_RETRIES}.`
+      ])
+    )
+  })
+
+  it('refuses to load a config file larger than the configured byte limit', () => {
+    const root = tempRepo()
+    const configPath = path.join(root, '.deterministic-deps.yml')
+    // Build a YAML mapping whose value blob pushes it just over the limit.
+    const filler = 'x'.repeat(MAX_CONFIG_FILE_BYTES + 1)
+    fs.writeFileSync(configPath, `comment: "${filler}"\n`, 'utf8')
+
+    const result = loadConfigWithDiagnostics(root, '.deterministic-deps.yml')
+
+    expect(result.config).toEqual({})
+    expect(result.diagnostics).toHaveLength(1)
+    expect(result.diagnostics[0].message).toMatch(/exceeds the .*-byte limit/)
+  })
+
+  it('refuses to load a config path that resolves outside the workspace root', () => {
+    const root = tempRepo()
+    const sibling = fs.mkdtempSync(path.join(os.tmpdir(), 'deterministic-deps-outside-'))
+    fs.writeFileSync(path.join(sibling, 'escape.yml'), 'mode: enforce\n', 'utf8')
+
+    const escapingPath = path.relative(root, path.join(sibling, 'escape.yml'))
+    const result = loadConfigWithDiagnostics(root, escapingPath)
+
+    expect(result.config).toEqual({})
+    expect(result.diagnostics).toEqual([
+      {
+        message: `Refusing to load config '${escapingPath}' because it resolves outside the workspace root.`
+      }
+    ])
   })
 
   it('keeps schema enums and ecosystem options aligned with parser constants', () => {
