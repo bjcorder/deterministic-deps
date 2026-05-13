@@ -2,9 +2,10 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach } from '@jest/globals'
-import { renderMarkdown, renderSarif } from '../src/report'
+import { renderMarkdown, renderPatch, renderSarif } from '../src/report'
 import { scan } from '../src/scanner'
 import { shouldReportFailure } from '../src/rules'
+import { Finding } from '../src/types'
 
 const originalFetch = globalThis.fetch
 
@@ -263,7 +264,7 @@ describe('deterministic-deps scanner', () => {
         'on: pull_request',
         'jobs:',
         '  test:',
-        '    runs-on: ubuntu-latest',
+        '    runs-on: ubuntu-24.04',
         '    steps:',
         '      # uses: actions/checkout@v4',
         '      - uses: ./local-action',
@@ -426,6 +427,180 @@ describe('deterministic-deps scanner', () => {
       `https://api.github.com/repos/actions/checkout/commits/${sha}`
     )
     expect(result.findings).toEqual([])
+  })
+
+  it('sends GITHUB_TOKEN to trusted GitHub.com API URLs in auto mode', async () => {
+    const root = tempRepo()
+    const sha = '0123456789abcdef0123456789abcdef01234567'
+    const fetchMock = jest.fn().mockResolvedValue({ status: 200 })
+    globalThis.fetch = fetchMock
+    process.env.GITHUB_TOKEN = 'github-token'
+    write(root, '.github/workflows/ci.yml', `steps:\n  - uses: actions/checkout@${sha}\n`)
+
+    const result = await scan({
+      root,
+      include: [],
+      exclude: [],
+      config: { remoteValidation: true, remoteValidationRetries: 0 }
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `https://api.github.com/repos/actions/checkout/commits/${sha}`,
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.objectContaining({ Authorization: 'Bearer github-token' })
+      })
+    )
+    expect(result.findings).toEqual([])
+    expect(result.diagnostics).toEqual([])
+  })
+
+  it('omits GITHUB_TOKEN in never mode', async () => {
+    const root = tempRepo()
+    const sha = '0123456789abcdef0123456789abcdef01234567'
+    const fetchMock = jest.fn().mockResolvedValue({ status: 200 })
+    globalThis.fetch = fetchMock
+    process.env.GITHUB_TOKEN = 'github-token'
+    write(root, '.github/workflows/ci.yml', `steps:\n  - uses: actions/checkout@${sha}\n`)
+
+    const result = await scan({
+      root,
+      include: [],
+      exclude: [],
+      config: {
+        remoteValidation: true,
+        remoteTokenPolicy: 'never',
+        remoteValidationRetries: 0
+      }
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `https://api.github.com/repos/actions/checkout/commits/${sha}`,
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.not.objectContaining({ Authorization: expect.any(String) })
+      })
+    )
+    expect(result.findings).toEqual([])
+    expect(result.diagnostics).toEqual([])
+  })
+
+  it('sends GITHUB_TOKEN to matching HTTPS GitHub Enterprise API hosts in auto mode', async () => {
+    const root = tempRepo()
+    const sha = '0123456789abcdef0123456789abcdef01234567'
+    const fetchMock = jest.fn().mockResolvedValue({ status: 200 })
+    globalThis.fetch = fetchMock
+    process.env.GITHUB_TOKEN = 'ghe-token'
+    process.env.GITHUB_SERVER_URL = 'https://ghe.example.com:8443'
+    process.env.GITHUB_API_URL = 'https://ghe.example.com:8443/api/v3/'
+    write(root, '.github/workflows/ci.yml', `steps:\n  - uses: platform/checkout@${sha}\n`)
+
+    const result = await scan({
+      root,
+      include: [],
+      exclude: [],
+      config: { remoteValidation: true, remoteValidationRetries: 0 }
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `https://ghe.example.com:8443/api/v3/repos/platform/checkout/commits/${sha}`,
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.objectContaining({ Authorization: 'Bearer ghe-token' })
+      })
+    )
+    expect(result.findings).toEqual([])
+    expect(result.diagnostics).toEqual([])
+  })
+
+  it('omits GITHUB_TOKEN and warns for mismatched GitHub Enterprise API hosts in auto mode', async () => {
+    const root = tempRepo()
+    const sha = '0123456789abcdef0123456789abcdef01234567'
+    const fetchMock = jest.fn().mockResolvedValue({ status: 200 })
+    globalThis.fetch = fetchMock
+    process.env.GITHUB_TOKEN = 'ghe-token'
+    process.env.GITHUB_SERVER_URL = 'https://ghe.example.com'
+    process.env.GITHUB_API_URL = 'https://evil.example.com/api/v3'
+    write(root, '.github/workflows/ci.yml', `steps:\n  - uses: platform/checkout@${sha}\n`)
+
+    const result = await scan({
+      root,
+      include: [],
+      exclude: [],
+      config: { remoteValidation: true, remoteValidationRetries: 0 }
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `https://evil.example.com/api/v3/repos/platform/checkout/commits/${sha}`,
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.not.objectContaining({ Authorization: expect.any(String) })
+      })
+    )
+    expect(result.findings).toEqual([])
+    expect(result.diagnostics).toEqual([
+      {
+        message:
+          "remote-token-policy auto omitted GITHUB_TOKEN for untrusted GitHub API URL 'https://evil.example.com/api/v3'. Expected HTTPS api.github.com for GitHub.com or an HTTPS host matching GITHUB_SERVER_URL for GitHub Enterprise Server."
+      }
+    ])
+  })
+
+  it('omits GITHUB_TOKEN and warns for non-HTTPS API URLs in auto mode', async () => {
+    const root = tempRepo()
+    const sha = '0123456789abcdef0123456789abcdef01234567'
+    const fetchMock = jest.fn().mockResolvedValue({ status: 200 })
+    globalThis.fetch = fetchMock
+    process.env.GITHUB_TOKEN = 'github-token'
+    process.env.GITHUB_API_URL = 'http://api.github.com'
+    write(root, '.github/workflows/ci.yml', `steps:\n  - uses: actions/checkout@${sha}\n`)
+
+    const result = await scan({
+      root,
+      include: [],
+      exclude: [],
+      config: { remoteValidation: true, remoteValidationRetries: 0 }
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `http://api.github.com/repos/actions/checkout/commits/${sha}`,
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.not.objectContaining({ Authorization: expect.any(String) })
+      })
+    )
+    expect(result.findings).toEqual([])
+    expect(result.diagnostics).toEqual([
+      {
+        message:
+          "remote-token-policy auto omitted GITHUB_TOKEN for untrusted GitHub API URL 'http://api.github.com'. Expected HTTPS api.github.com for GitHub.com or an HTTPS host matching GITHUB_SERVER_URL for GitHub Enterprise Server."
+      }
+    ])
+  })
+
+  it('omits Authorization without warning when GITHUB_TOKEN is absent', async () => {
+    const root = tempRepo()
+    const sha = '0123456789abcdef0123456789abcdef01234567'
+    const fetchMock = jest.fn().mockResolvedValue({ status: 200 })
+    globalThis.fetch = fetchMock
+    write(root, '.github/workflows/ci.yml', `steps:\n  - uses: actions/checkout@${sha}\n`)
+
+    const result = await scan({
+      root,
+      include: [],
+      exclude: [],
+      config: { remoteValidation: true, remoteValidationRetries: 0 }
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `https://api.github.com/repos/actions/checkout/commits/${sha}`,
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.not.objectContaining({ Authorization: expect.any(String) })
+      })
+    )
+    expect(result.findings).toEqual([])
+    expect(result.diagnostics).toEqual([])
   })
 
   it('reports missing GitHub Action SHAs when remote validation is enabled', async () => {
@@ -623,5 +798,174 @@ describe('deterministic-deps scanner', () => {
         })
       })
     ])
+  })
+
+  it('redacts credential material from stored findings across dependency ecosystems', async () => {
+    const root = tempRepo()
+    write(
+      root,
+      '.github/workflows/ci.yml',
+      [
+        'jobs:',
+        '  test:',
+        '    runs-on: ubuntu-24.04',
+        '    steps:',
+        '      - uses: docker://user:supersecret@registry.example.com/acme/app:latest',
+        ''
+      ].join('\n')
+    )
+    write(root, 'Dockerfile', 'FROM user:supersecret@registry.example.com/acme/app:latest\n')
+    write(
+      root,
+      'package.json',
+      JSON.stringify(
+        {
+          dependencies: {
+            demo: 'git+https://user:supersecret@example.com/acme/demo.git#main'
+          }
+        },
+        null,
+        2
+      )
+    )
+    write(
+      root,
+      'requirements.txt',
+      'demo @ git+https://user:supersecret@example.com/acme/demo.git@main\n'
+    )
+    write(
+      root,
+      'Gemfile',
+      "gem 'demo', git: 'https://user:supersecret@example.com/acme/demo.git', branch: 'main'\n"
+    )
+    write(root, 'Gemfile.lock', '# lock\n')
+
+    const result = await scan({ root, include: [], exclude: [], config: {} })
+    const serialized = JSON.stringify(result.findings)
+
+    expect(serialized).not.toContain('supersecret')
+    expect(serialized).toContain('[REDACTED]')
+    expect(result.findings.map((finding) => finding.ruleId)).toEqual(
+      expect.arrayContaining([
+        'github-actions/docker-digest',
+        'containers/image-digest',
+        'node/non-deterministic-spec',
+        'python/git-sha',
+        'ruby/git-ref-sha'
+      ])
+    )
+  })
+
+  it('redacts credential material from remote validation findings', async () => {
+    const root = tempRepo()
+    const sha = 'ffffffffffffffffffffffffffffffffffffffff'
+    globalThis.fetch = jest.fn().mockResolvedValue({ status: 404 })
+    write(
+      root,
+      'requirements.txt',
+      `demo @ git+https://github.com/acme/demo.git?private_token=supersecret&ref=${sha}\n`
+    )
+
+    const result = await scan({
+      root,
+      include: [],
+      exclude: [],
+      config: { remoteValidation: true, remoteValidationRetries: 0 }
+    })
+
+    expect(JSON.stringify(result.findings)).not.toContain('supersecret')
+    expect(JSON.stringify(result.findings)).toContain('private_token=[REDACTED]')
+    expect(result.findings).toEqual([
+      expect.objectContaining({
+        ruleId: 'remote/github-ref'
+      })
+    ])
+  })
+
+  it('redacts credential material from stored replacement suggestions', async () => {
+    const root = tempRepo()
+    const sha = '0123456789abcdef0123456789abcdef01234567'
+    write(
+      root,
+      'Cargo.toml',
+      [
+        '[dependencies]',
+        `demo = { git = "https://user:supersecret@github.com/acme/demo.git?private_token=querysecret&rev=${sha}" }`,
+        ''
+      ].join('\n')
+    )
+    write(root, 'Cargo.lock', '# lock\n')
+
+    const result = await scan({ root, include: [], exclude: [], config: {} })
+    const serialized = JSON.stringify(result.findings)
+    const finding = result.findings.find((entry) => entry.ruleId === 'rust/git-rev-sha')
+
+    expect(serialized).not.toContain('supersecret')
+    expect(serialized).not.toContain('querysecret')
+    expect(serialized).toContain('[REDACTED]')
+    expect(finding?.suggestion).toEqual(
+      expect.objectContaining({
+        safeToApply: false,
+        replacement: expect.objectContaining({
+          oldText: expect.stringContaining('[REDACTED]'),
+          newText: expect.stringContaining('[REDACTED]')
+        })
+      })
+    )
+
+    const markdown = renderMarkdown(result.findings)
+    const sarif = JSON.stringify(renderSarif(result.findings))
+    const patch = renderPatch(root, result.findings)
+
+    expect(markdown).not.toContain('Replace line 2 with')
+    expect(markdown).not.toContain('supersecret')
+    expect(markdown).not.toContain('querysecret')
+    expect(sarif).not.toContain('"fixes"')
+    expect(sarif).not.toContain('supersecret')
+    expect(sarif).not.toContain('querysecret')
+    expect(patch).toBe('')
+  })
+
+  it('redacts reports and skips patch or SARIF fixes for credential-bearing replacements', () => {
+    const root = tempRepo()
+    const sha = '0123456789abcdef0123456789abcdef01234567'
+    const oldText = `demo = { git = "https://user:supersecret@github.com/acme/demo.git?rev=${sha}" }`
+    const newText = oldText.replace(/\s*}\s*$/, `, rev = "${sha}" }`)
+    write(root, 'Cargo.toml', ['[dependencies]', oldText, ''].join('\n'))
+
+    const findings: Finding[] = [
+      {
+        ruleId: 'rust/git-rev-sha',
+        ecosystem: 'rust',
+        file: 'Cargo.toml',
+        line: 2,
+        severity: 'high',
+        message: `Rust git dependency '${oldText}' does not pin a rev commit SHA.`,
+        remediation: 'Add rev = "<40-character commit SHA>" to git dependencies.',
+        suggestion: {
+          title: `Add explicit Cargo rev '${sha}' from the existing git URL.`,
+          confidence: 'high',
+          safeToApply: true,
+          replacement: {
+            file: 'Cargo.toml',
+            line: 2,
+            oldText,
+            newText
+          }
+        }
+      }
+    ]
+
+    const markdown = renderMarkdown(findings)
+    const sarif = JSON.stringify(renderSarif(findings))
+    const patch = renderPatch(root, findings)
+
+    expect(markdown).not.toContain('supersecret')
+    expect(markdown).not.toContain('Replace line 2 with')
+    expect(markdown).toContain('[REDACTED]')
+    expect(sarif).not.toContain('supersecret')
+    expect(sarif).not.toContain('"fixes"')
+    expect(sarif).toContain('[REDACTED]')
+    expect(patch).toBe('')
   })
 })

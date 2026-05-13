@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added a GitHub Actions runner-label rule that flags floating hosted labels such as
+  `ubuntu-latest`, `windows-latest`, and `macos-latest`.
+- Added Rust toolchain file checks for floating `stable`, `beta`, and `nightly` channels.
+- Redacted credential-bearing dependency strings from findings, reports, SARIF, and annotations.
+- Restricted remote-validation `GITHUB_TOKEN` forwarding to trusted HTTPS GitHub API hosts, with
+  `remote-token-policy: never` for fully unauthenticated remote validation.
 - Reduced GitHub Actions token permissions for CI and CodeQL workflows.
 - Added explicit vulnerability reporting links to the security policy.
 - Documented intentional floating Dockerfile fixtures and the Scorecard test-fixture dismissal

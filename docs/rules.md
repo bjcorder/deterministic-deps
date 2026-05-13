@@ -8,13 +8,15 @@ Rule ids, ecosystems, default severities, descriptions, and evaluators are regis
 
 ## GitHub Actions
 
-| Rule                           | Severity | Behavior                                                                       |
-| ------------------------------ | -------- | ------------------------------------------------------------------------------ |
-| `github-actions/sha-pin`       | high     | External `uses:` references must include a full 40-character commit SHA.       |
-| `github-actions/full-sha`      | high     | Short SHAs are flagged because they are not explicit enough for policy review. |
-| `github-actions/docker-digest` | high     | `docker://` action references must include an `@sha256:` digest.               |
+| Rule                              | Severity | Behavior                                                                       |
+| --------------------------------- | -------- | ------------------------------------------------------------------------------ |
+| `github-actions/sha-pin`          | high     | External `uses:` references must include a full 40-character commit SHA.       |
+| `github-actions/full-sha`         | high     | Short SHAs are flagged because they are not explicit enough for policy review. |
+| `github-actions/docker-digest`    | high     | `docker://` action references must include an `@sha256:` digest.               |
+| `github-actions/versioned-runner` | medium   | GitHub-hosted `runs-on` labels should use versioned OS labels.                 |
 
 Local `./` and `../` actions are allowed.
+Floating hosted runner aliases such as `ubuntu-latest`, `windows-latest`, and `macos-latest` are flagged in scalar, array, and simple matrix `runs-on` declarations. Versioned labels such as `ubuntu-24.04`, `windows-2025`, and `macos-15`, self-hosted/custom labels, and runner groups are allowed.
 
 ## Containers
 
@@ -58,8 +60,14 @@ Local `./` and `../` actions are allowed.
 | ------------------------ | -------- | --------------------------------------------------------------------------------------- |
 | `rust/lockfile-required` | high     | `Cargo.toml` requires `Cargo.lock` for deterministic application/workspace builds.      |
 | `rust/git-rev-sha`       | high     | Git dependencies in dependency tables must include `rev = "<40-character commit SHA>"`. |
+| `rust/toolchain-version` | medium   | Rust toolchain files must not use floating `stable`, `beta`, or `nightly` channels.     |
 
 The Rust git revision rule can include a safe patch suggestion when a one-line dependency table already has a full commit SHA in the git URL, such as a `?rev=` query, but lacks the explicit Cargo `rev` field.
+
+Rust toolchain checks inspect `[toolchain] channel` values in `rust-toolchain.toml` and TOML-style
+legacy `rust-toolchain` files, plus one-line legacy `rust-toolchain` files. Exact versions such as
+`1.78.0`, dated channels such as `nightly-2024-05-01`, and custom toolchain names are accepted.
+Malformed or unsupported toolchain file shapes are ignored.
 
 ## JVM
 

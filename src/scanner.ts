@@ -11,18 +11,19 @@ export async function scan(options: ScanOptions): Promise<ScanResult> {
   const staticFindings = files.flatMap((file) =>
     evaluateFile(options.root, file, options.config, trackedFiles)
   )
+  const remoteResult =
+    options.config.remoteValidation === true
+      ? await validateRemoteReferences(options.root, files, options.config)
+      : { findings: [], diagnostics: [] }
   const remoteFindings =
     options.config.remoteValidation === true
-      ? finalizeFindings(
-          await validateRemoteReferences(options.root, files, options.config),
-          options.config,
-          trackedFiles
-        )
+      ? finalizeFindings(remoteResult.findings, options.config, trackedFiles)
       : []
 
   return {
     findings: [...staticFindings, ...remoteFindings],
-    scannedFiles: files
+    scannedFiles: files,
+    diagnostics: remoteResult.diagnostics
   }
 }
 

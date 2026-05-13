@@ -1,0 +1,2 @@
+[toolchain]
+channel = "nightly-2024-05-01-x86_64-unknown-linux-gnu"

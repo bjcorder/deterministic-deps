@@ -1,5 +1,12 @@
 [
   {
+    "ruleId": "github-actions/versioned-runner",
+    "ecosystem": "github-actions",
+    "file": ".github/workflows/ci.yml",
+    "line": 5,
+    "severity": "medium"
+  },
+  {
     "ruleId": "github-actions/sha-pin",
     "ecosystem": "github-actions",
     "file": ".github/workflows/ci.yml",
@@ -19,5 +26,26 @@
     "file": ".github/workflows/ci.yml",
     "line": 9,
     "severity": "high"
+  },
+  {
+    "ruleId": "github-actions/versioned-runner",
+    "ecosystem": "github-actions",
+    "file": ".github/workflows/ci.yml",
+    "line": 11,
+    "severity": "medium"
+  },
+  {
+    "ruleId": "github-actions/versioned-runner",
+    "ecosystem": "github-actions",
+    "file": ".github/workflows/ci.yml",
+    "line": 18,
+    "severity": "medium"
+  },
+  {
+    "ruleId": "github-actions/versioned-runner",
+    "ecosystem": "github-actions",
+    "file": ".github/workflows/ci.yml",
+    "line": 26,
+    "severity": "medium"
   }
 ]

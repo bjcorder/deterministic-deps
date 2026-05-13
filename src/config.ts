@@ -7,11 +7,13 @@ import {
   ConfigLoadResult,
   EcosystemOptions,
   Mode,
+  RemoteTokenPolicy,
   Severity
 } from './types'
 
 export const VALID_SEVERITIES = ['low', 'medium', 'high'] as const
 export const VALID_MODES = ['advisory', 'enforce'] as const
+export const VALID_REMOTE_TOKEN_POLICIES = ['auto', 'never'] as const
 export const ECOSYSTEM_OPTIONS: Record<string, string[]> = {
   go: ['requireGoSum'],
   jvm: ['allowDynamicVersionsWithGradleMetadata'],
@@ -186,6 +188,29 @@ export function normalizePositiveIntegerInput(
   }
 }
 
+export function normalizeRemoteTokenPolicyInput(
+  value: string | undefined,
+  fallback: RemoteTokenPolicy = 'auto',
+  key = 'remote-token-policy'
+): { value: RemoteTokenPolicy; diagnostics: ConfigDiagnostic[] } {
+  if (value === undefined || value === '') {
+    return { value: fallback, diagnostics: [] }
+  }
+
+  if (isRemoteTokenPolicy(value)) {
+    return { value, diagnostics: [] }
+  }
+
+  return {
+    value: fallback,
+    diagnostics: [
+      {
+        message: `Invalid action input ${key} '${String(value)}'; expected one of ${VALID_REMOTE_TOKEN_POLICIES.join(', ')}. Falling back to ${fallback}.`
+      }
+    ]
+  }
+}
+
 export function loadConfig(root: string, configPath: string): Config {
   return loadConfigWithDiagnostics(root, configPath).config
 }
@@ -214,6 +239,7 @@ export function loadConfigWithDiagnostics(root: string, configPath: string): Con
       severityThreshold: readSeverity(raw, 'severity-threshold', diagnostics),
       patch: readBoolean(raw, 'patch', diagnostics),
       remoteValidation: readBoolean(raw, 'remote-validation', diagnostics),
+      remoteTokenPolicy: readRemoteTokenPolicy(raw, diagnostics),
       remoteValidationTimeoutMs: readPositiveInteger(raw, 'remote-timeout-ms', diagnostics),
       remoteValidationRetries: readPositiveInteger(raw, 'remote-retries', diagnostics),
       include: readStringArray(raw, 'include', diagnostics),
@@ -270,6 +296,25 @@ function readSeverity(
 
   diagnostics.push({
     message: `Invalid ${key} '${String(value)}'; expected one of ${VALID_SEVERITIES.join(', ')}.`
+  })
+  return undefined
+}
+
+function readRemoteTokenPolicy(
+  raw: Record<string, unknown>,
+  diagnostics: ConfigDiagnostic[]
+): RemoteTokenPolicy | undefined {
+  const value = raw['remote-token-policy']
+  if (value === undefined) {
+    return undefined
+  }
+
+  if (isRemoteTokenPolicy(value)) {
+    return value
+  }
+
+  diagnostics.push({
+    message: `Invalid remote-token-policy '${String(value)}'; expected one of ${VALID_REMOTE_TOKEN_POLICIES.join(', ')}.`
   })
   return undefined
 }
@@ -482,6 +527,10 @@ function readEcosystems(
 
 function isSeverity(value: unknown): value is Severity {
   return value === 'low' || value === 'medium' || value === 'high'
+}
+
+function isRemoteTokenPolicy(value: unknown): value is RemoteTokenPolicy {
+  return value === 'auto' || value === 'never'
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

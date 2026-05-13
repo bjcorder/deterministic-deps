@@ -41044,7 +41044,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.ECOSYSTEM_OPTIONS = exports.VALID_MODES = exports.VALID_SEVERITIES = void 0;
+exports.ECOSYSTEM_OPTIONS = exports.VALID_REMOTE_TOKEN_POLICIES = exports.VALID_MODES = exports.VALID_SEVERITIES = void 0;
 exports.splitPatterns = splitPatterns;
 exports.normalizeMode = normalizeMode;
 exports.normalizeModeInput = normalizeModeInput;
@@ -41054,6 +41054,7 @@ exports.normalizeBoolean = normalizeBoolean;
 exports.normalizeBooleanInput = normalizeBooleanInput;
 exports.normalizePositiveInteger = normalizePositiveInteger;
 exports.normalizePositiveIntegerInput = normalizePositiveIntegerInput;
+exports.normalizeRemoteTokenPolicyInput = normalizeRemoteTokenPolicyInput;
 exports.loadConfig = loadConfig;
 exports.loadConfigWithDiagnostics = loadConfigWithDiagnostics;
 const node_fs_1 = __importDefault(__nccwpck_require__(3024));
@@ -41061,6 +41062,7 @@ const node_path_1 = __importDefault(__nccwpck_require__(6760));
 const js_yaml_1 = __importDefault(__nccwpck_require__(4281));
 exports.VALID_SEVERITIES = ['low', 'medium', 'high'];
 exports.VALID_MODES = ['advisory', 'enforce'];
+exports.VALID_REMOTE_TOKEN_POLICIES = ['auto', 'never'];
 exports.ECOSYSTEM_OPTIONS = {
     go: ['requireGoSum'],
     jvm: ['allowDynamicVersionsWithGradleMetadata'],
@@ -41193,6 +41195,22 @@ function normalizePositiveIntegerInput(value, key, fallback) {
         ]
     };
 }
+function normalizeRemoteTokenPolicyInput(value, fallback = 'auto', key = 'remote-token-policy') {
+    if (value === undefined || value === '') {
+        return { value: fallback, diagnostics: [] };
+    }
+    if (isRemoteTokenPolicy(value)) {
+        return { value, diagnostics: [] };
+    }
+    return {
+        value: fallback,
+        diagnostics: [
+            {
+                message: `Invalid action input ${key} '${String(value)}'; expected one of ${exports.VALID_REMOTE_TOKEN_POLICIES.join(', ')}. Falling back to ${fallback}.`
+            }
+        ]
+    };
+}
 function loadConfig(root, configPath) {
     return loadConfigWithDiagnostics(root, configPath).config;
 }
@@ -41217,6 +41235,7 @@ function loadConfigWithDiagnostics(root, configPath) {
             severityThreshold: readSeverity(raw, 'severity-threshold', diagnostics),
             patch: readBoolean(raw, 'patch', diagnostics),
             remoteValidation: readBoolean(raw, 'remote-validation', diagnostics),
+            remoteTokenPolicy: readRemoteTokenPolicy(raw, diagnostics),
             remoteValidationTimeoutMs: readPositiveInteger(raw, 'remote-timeout-ms', diagnostics),
             remoteValidationRetries: readPositiveInteger(raw, 'remote-retries', diagnostics),
             include: readStringArray(raw, 'include', diagnostics),
@@ -41260,6 +41279,19 @@ function readSeverity(raw, key, diagnostics) {
     }
     diagnostics.push({
         message: `Invalid ${key} '${String(value)}'; expected one of ${exports.VALID_SEVERITIES.join(', ')}.`
+    });
+    return undefined;
+}
+function readRemoteTokenPolicy(raw, diagnostics) {
+    const value = raw['remote-token-policy'];
+    if (value === undefined) {
+        return undefined;
+    }
+    if (isRemoteTokenPolicy(value)) {
+        return value;
+    }
+    diagnostics.push({
+        message: `Invalid remote-token-policy '${String(value)}'; expected one of ${exports.VALID_REMOTE_TOKEN_POLICIES.join(', ')}.`
     });
     return undefined;
 }
@@ -41418,6 +41450,9 @@ function readEcosystems(raw, diagnostics) {
 function isSeverity(value) {
     return value === 'low' || value === 'medium' || value === 'high';
 }
+function isRemoteTokenPolicy(value) {
+    return value === 'auto' || value === 'never';
+}
 function isRecord(value) {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
@@ -41447,6 +41482,8 @@ exports.DEFAULT_INCLUDE = [
     '**/Pipfile',
     '**/go.mod',
     '**/Cargo.toml',
+    '**/rust-toolchain.toml',
+    '**/rust-toolchain',
     '**/pom.xml',
     '**/build.gradle',
     '**/build.gradle.kts',
@@ -41476,6 +41513,112 @@ exports.SEVERITY_ORDER = {
 
 /***/ }),
 
+/***/ 1066:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.sanitizeDisplayValue = sanitizeDisplayValue;
+exports.sanitizeFinding = sanitizeFinding;
+exports.containsCredentialMaterial = containsCredentialMaterial;
+const REDACTED = '[REDACTED]';
+const SENSITIVE_QUERY_KEYS = [
+    'token',
+    'access_token',
+    'password',
+    'passwd',
+    'pwd',
+    'secret',
+    'client_secret',
+    'api_key',
+    'apikey',
+    'key',
+    'auth',
+    'authorization',
+    'signature',
+    'sig'
+];
+const SENSITIVE_QUERY_PATTERN = new RegExp(`([?&;])([^=&#\\s'"<>)]{1,100})(=)([^&#\\s'"<>)]*)`, 'gi');
+function sanitizeDisplayValue(value) {
+    return value
+        .replace(/\b([A-Za-z][A-Za-z0-9+.-]*:\/\/)([^/\s'"<>@]+@)/g, `$1${REDACTED}@`)
+        .replace(/\b([^/\s'"<>:@]+:[^/\s'"<>@]+@)([A-Za-z0-9.-]+(?::\d+)?\/)/g, `${REDACTED}@$2`)
+        .replace(SENSITIVE_QUERY_PATTERN, (match, separator, key, equals) => isSensitiveQueryKey(key) ? `${separator}${key}${equals}${REDACTED}` : match)
+        .replace(/\b(Authorization\s*[:=]\s*)(Bearer|Basic)?\s*[^,\s'"<>)}\]]+/gi, (_match, prefix, scheme) => `${prefix}${scheme ? `${scheme} ` : ''}${REDACTED}`)
+        .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi, `$1 ${REDACTED}`);
+}
+function sanitizeFinding(finding) {
+    const suggestion = finding.suggestion;
+    const replacement = suggestion?.replacement;
+    const replacementHasCredentialMaterial = replacement
+        ? containsCredentialMaterial(replacement.oldText) ||
+            containsCredentialMaterial(replacement.newText)
+        : false;
+    return {
+        ...finding,
+        message: sanitizeDisplayValue(finding.message),
+        remediation: sanitizeDisplayValue(finding.remediation),
+        suggestion: suggestion
+            ? {
+                ...suggestion,
+                title: sanitizeDisplayValue(suggestion.title),
+                safeToApply: replacementHasCredentialMaterial ? false : suggestion.safeToApply,
+                replacement: replacement
+                    ? {
+                        ...replacement,
+                        oldText: sanitizeDisplayValue(replacement.oldText),
+                        newText: sanitizeDisplayValue(replacement.newText)
+                    }
+                    : undefined
+            }
+            : undefined
+    };
+}
+function containsCredentialMaterial(value) {
+    return sanitizeDisplayValue(value) !== value;
+}
+function isSensitiveQueryKey(key) {
+    const normalized = normalizeQueryKey(key);
+    if (SENSITIVE_QUERY_KEYS.includes(normalized)) {
+        return true;
+    }
+    const compact = normalized.replace(/[^a-z0-9]/g, '');
+    const parts = normalized.split(/[^a-z0-9]+/).filter(Boolean);
+    const sensitiveWords = [
+        'token',
+        'secret',
+        'credential',
+        'password',
+        'passwd',
+        'pwd',
+        'apikey',
+        'auth',
+        'authorization',
+        'signature',
+        'sig'
+    ];
+    return sensitiveWords.some((word) => compact === word || compact.endsWith(word) || parts.includes(word));
+}
+function normalizeQueryKey(key) {
+    const decoded = safeDecodeURIComponent(key);
+    return decoded
+        .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+        .replace(/_/g, '-')
+        .toLowerCase();
+}
+function safeDecodeURIComponent(value) {
+    try {
+        return decodeURIComponent(value.replace(/\+/g, ' '));
+    }
+    catch {
+        return value;
+    }
+}
+
+
+/***/ }),
+
 /***/ 6473:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -41492,17 +41635,20 @@ const node_timers_1 = __nccwpck_require__(7997);
 const promises_1 = __nccwpck_require__(8500);
 const js_yaml_1 = __importDefault(__nccwpck_require__(4281));
 const constants_1 = __nccwpck_require__(7242);
+const redaction_1 = __nccwpck_require__(1066);
 const DEFAULT_TIMEOUT_MS = 5000;
 const DEFAULT_RETRIES = 1;
 async function validateRemoteReferences(root, files, config) {
     const references = dedupeRemoteReferences(files.flatMap((file) => collectRemoteReferences(root, file)));
     const cache = new Map();
     const findings = [];
+    const apiBaseUrl = githubApiBaseUrl();
+    const tokenDecision = githubTokenDecision(apiBaseUrl, config);
     for (const reference of references) {
         const key = `${reference.host}/${reference.owner}/${reference.repo}@${reference.sha}`.toLowerCase();
         let result = cache.get(key);
         if (!result) {
-            result = await validateGithubCommit(reference.owner, reference.repo, reference.sha, config);
+            result = await validateGithubCommit(reference.owner, reference.repo, reference.sha, config, apiBaseUrl, tokenDecision.headers);
             cache.set(key, result);
         }
         if (result.status === 'missing') {
@@ -41512,7 +41658,7 @@ async function validateRemoteReferences(root, files, config) {
             findings.push(remoteFinding('remote/validation-error', reference, 'low', `Remote validation for '${reference.owner}/${reference.repo}@${reference.sha}' could not complete: ${result.message}.`, 'Retry later, adjust remote validation timeout/retry settings, or disable remote validation for offline/static-only runs.'));
         }
     }
-    return findings;
+    return { findings, diagnostics: tokenDecision.diagnostics };
 }
 function collectRemoteReferences(root, file) {
     const absolutePath = node_path_1.default.join(root, file);
@@ -41575,12 +41721,12 @@ function collectGithubUrlCommitReferences(file, content, host) {
     }
     return references;
 }
-async function validateGithubCommit(owner, repo, sha, config) {
+async function validateGithubCommit(owner, repo, sha, config, apiBaseUrl, headers) {
     const timeoutMs = config.remoteValidationTimeoutMs ?? DEFAULT_TIMEOUT_MS;
     const retries = config.remoteValidationRetries ?? DEFAULT_RETRIES;
-    const url = githubCommitApiUrl(owner, repo, sha);
+    const url = githubCommitApiUrl(apiBaseUrl, owner, repo, sha);
     for (let attempt = 0; attempt <= retries; attempt += 1) {
-        const result = await fetchGithubCommit(url, timeoutMs);
+        const result = await fetchGithubCommit(url, timeoutMs, headers);
         if (result.status === 'found' || result.status === 'missing') {
             return result;
         }
@@ -41591,8 +41737,7 @@ async function validateGithubCommit(owner, repo, sha, config) {
     }
     return { status: 'error', message: 'validation retry loop exited unexpectedly' };
 }
-function githubCommitApiUrl(owner, repo, sha) {
-    const apiBaseUrl = githubApiBaseUrl();
+function githubCommitApiUrl(apiBaseUrl, owner, repo, sha) {
     return `${apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${sha}`;
 }
 function githubApiBaseUrl() {
@@ -41618,13 +41763,13 @@ function githubServerUrl() {
         return new URL('https://github.com');
     }
 }
-async function fetchGithubCommit(url, timeoutMs) {
+async function fetchGithubCommit(url, timeoutMs, headers) {
     const controller = new AbortController();
     const timeout = (0, node_timers_1.setTimeout)(() => controller.abort(), timeoutMs);
     try {
         const response = await globalThis.fetch(url, {
             method: 'GET',
-            headers: githubHeaders(),
+            headers,
             signal: controller.signal
         });
         if (response.status === 200) {
@@ -41654,16 +41799,44 @@ async function fetchGithubCommit(url, timeoutMs) {
         (0, node_timers_1.clearTimeout)(timeout);
     }
 }
-function githubHeaders() {
+function githubTokenDecision(apiBaseUrl, config) {
     const headers = {
         Accept: 'application/vnd.github+json',
         'User-Agent': 'deterministic-deps'
     };
     const token = process.env.GITHUB_TOKEN;
-    if (token) {
-        headers.Authorization = `Bearer ${token}`;
+    if (!token || config.remoteTokenPolicy === 'never') {
+        return { headers, diagnostics: [] };
     }
-    return headers;
+    if (isTrustedGithubApiBaseUrl(apiBaseUrl)) {
+        headers.Authorization = `Bearer ${token}`;
+        return { headers, diagnostics: [] };
+    }
+    return {
+        headers,
+        diagnostics: [
+            {
+                message: `remote-token-policy auto omitted GITHUB_TOKEN for untrusted GitHub API URL '${(0, redaction_1.sanitizeDisplayValue)(apiBaseUrl)}'. Expected HTTPS api.github.com for GitHub.com or an HTTPS host matching GITHUB_SERVER_URL for GitHub Enterprise Server.`
+            }
+        ]
+    };
+}
+function isTrustedGithubApiBaseUrl(apiBaseUrl) {
+    let apiUrl;
+    try {
+        apiUrl = new URL(apiBaseUrl);
+    }
+    catch {
+        return false;
+    }
+    if (apiUrl.protocol !== 'https:') {
+        return false;
+    }
+    const serverUrl = githubServerUrl();
+    if (serverUrl.hostname.toLowerCase() === 'github.com') {
+        return apiUrl.host.toLowerCase() === 'api.github.com';
+    }
+    return apiUrl.host.toLowerCase() === serverUrl.host.toLowerCase();
 }
 function remoteFinding(ruleId, reference, severity, message, remediation) {
     return {
@@ -41746,6 +41919,7 @@ exports.renderPatch = renderPatch;
 const node_fs_1 = __importDefault(__nccwpck_require__(3024));
 const node_crypto_1 = __importDefault(__nccwpck_require__(7598));
 const node_path_1 = __importDefault(__nccwpck_require__(6760));
+const redaction_1 = __nccwpck_require__(1066);
 const rules_1 = __nccwpck_require__(5755);
 const RULES_HELP_URI = 'https://github.com/bjcorder/deterministic-deps/blob/main/docs/rules.md';
 function countBySeverity(findings) {
@@ -41790,7 +41964,7 @@ function renderMarkdown(findings) {
     lines.push('| Severity | Rule | Ecosystem | Location | Message | Remediation |');
     lines.push('| --- | --- | --- | --- | --- | --- |');
     for (const finding of findings) {
-        lines.push(`| ${finding.severity} | ${finding.ruleId} | ${finding.ecosystem} | ${finding.file}:${finding.line} | ${escapeMarkdown(finding.message)} | ${escapeMarkdown(finding.remediation)} |`);
+        lines.push(`| ${finding.severity} | ${finding.ruleId} | ${finding.ecosystem} | ${finding.file}:${finding.line} | ${escapeMarkdown((0, redaction_1.sanitizeDisplayValue)(finding.message))} | ${escapeMarkdown((0, redaction_1.sanitizeDisplayValue)(finding.remediation))} |`);
     }
     const suggestions = findings.filter((finding) => finding.suggestion);
     if (suggestions.length > 0) {
@@ -41800,9 +41974,10 @@ function renderMarkdown(findings) {
             if (!suggestion) {
                 continue;
             }
-            lines.push(`- ${finding.file}:${finding.line} ${escapeMarkdown(suggestion.title)} (confidence: ${suggestion.confidence}; safe patch: ${suggestion.safeToApply ? 'yes' : 'no'})`);
-            if (suggestion.replacement) {
-                lines.push(`  - Replace line ${suggestion.replacement.line} with: \`${escapeMarkdown(suggestion.replacement.newText)}\``);
+            const replacement = safeReplacement(finding);
+            lines.push(`- ${finding.file}:${finding.line} ${escapeMarkdown((0, redaction_1.sanitizeDisplayValue)(suggestion.title))} (confidence: ${suggestion.confidence}; safe patch: ${replacement ? 'yes' : 'no'})`);
+            if (replacement) {
+                lines.push(`  - Replace line ${replacement.line} with: \`${escapeMarkdown((0, redaction_1.sanitizeDisplayValue)(replacement.newText))}\``);
             }
         }
     }
@@ -41828,7 +42003,7 @@ function renderSarif(findings) {
                         ruleId: finding.ruleId,
                         level: sarifLevel(finding.severity),
                         message: {
-                            text: `${finding.message} ${finding.remediation}`
+                            text: (0, redaction_1.sanitizeDisplayValue)(`${finding.message} ${finding.remediation}`)
                         },
                         locations: [
                             {
@@ -41853,7 +42028,7 @@ function renderSarif(findings) {
                         result.fixes = [
                             {
                                 description: {
-                                    text: finding.suggestion?.title ?? finding.remediation
+                                    text: (0, redaction_1.sanitizeDisplayValue)(finding.suggestion?.title ?? finding.remediation)
                                 },
                                 artifactChanges: [
                                     {
@@ -41867,7 +42042,7 @@ function renderSarif(findings) {
                                                     endLine: replacement.line
                                                 },
                                                 insertedContent: {
-                                                    text: `${replacement.newText}\n`
+                                                    text: `${(0, redaction_1.sanitizeDisplayValue)(replacement.newText)}\n`
                                                 }
                                             }
                                         ]
@@ -41927,7 +42102,7 @@ function sarifFingerprints(finding) {
             finding.ruleId,
             finding.file,
             finding.line.toString(),
-            finding.message
+            (0, redaction_1.sanitizeDisplayValue)(finding.message)
         ].join('\0'))
     };
 }
@@ -41954,7 +42129,14 @@ function safeReplacement(finding) {
     if (!suggestion?.safeToApply || !suggestion.replacement) {
         return undefined;
     }
+    if (replacementContainsCredentialMaterial(suggestion.replacement)) {
+        return undefined;
+    }
     return suggestion.replacement;
+}
+function replacementContainsCredentialMaterial(replacement) {
+    return ((0, redaction_1.containsCredentialMaterial)(replacement.oldText) ||
+        (0, redaction_1.containsCredentialMaterial)(replacement.newText));
 }
 function replacementMatchesFile(root, replacement) {
     const filePath = node_path_1.default.join(root, replacement.file);
@@ -41999,10 +42181,12 @@ const node_path_1 = __importDefault(__nccwpck_require__(6760));
 const js_yaml_1 = __importDefault(__nccwpck_require__(4281));
 const minimatch_1 = __nccwpck_require__(6507);
 const constants_1 = __nccwpck_require__(7242);
+const redaction_1 = __nccwpck_require__(1066);
 exports.rules = [
     rule('github-actions/sha-pin', 'github-actions', 'high', 'External GitHub Actions references must use full commit SHA refs.', checkGithubActions),
     rule('github-actions/full-sha', 'github-actions', 'high', 'Short GitHub Actions SHAs are rejected because they are not explicit enough.', checkGithubActions),
     rule('github-actions/docker-digest', 'github-actions', 'high', 'Docker action references must include sha256 digests.', checkGithubActions),
+    rule('github-actions/versioned-runner', 'github-actions', 'medium', 'GitHub-hosted runner labels should use versioned operating system labels.', checkGithubActions),
     rule('containers/image-digest', 'containers', 'medium', 'Container image references should include immutable sha256 digests.', checkDockerLikeFiles),
     rule('terraform/git-module-sha', 'terraform', 'high', 'Terraform module git sources must use full commit SHA refs.', checkTerraform),
     rule('terraform/provider-lock', 'terraform', 'medium', 'Terraform provider constraints require exact versions or provider lockfiles.', checkTerraform),
@@ -42016,6 +42200,7 @@ exports.rules = [
     rule('go/git-replace-sha', 'go', 'medium', 'Go replace directives that use git sources require immutable refs.', checkGo),
     rule('rust/lockfile-required', 'rust', 'high', 'Cargo manifests require Cargo.lock for deterministic application builds.', checkRust),
     rule('rust/git-rev-sha', 'rust', 'high', 'Rust git dependencies must include full rev commit SHAs.', checkRust),
+    rule('rust/toolchain-version', 'rust', 'medium', 'Rust toolchain files must avoid floating stable, beta, and nightly channels.', checkRust),
     rule('jvm/dynamic-version', 'jvm', 'medium', 'Maven and Gradle declarations reject dynamic JVM versions unless supported Gradle metadata satisfies policy.', checkJvm),
     rule('ruby/lockfile-required', 'ruby', 'high', 'Gemfiles require Gemfile.lock for deterministic resolution.', checkRuby),
     rule('ruby/git-ref-sha', 'ruby', 'high', 'Ruby git dependencies must pin full ref commit SHAs.', checkRuby),
@@ -42036,11 +42221,13 @@ function evaluateFile(root, file, config, trackedFiles) {
     return uniqueRuleHandlers()
         .flatMap((handler) => handler(context))
         .map((finding) => applySeverityOverride(finding, config))
+        .map(redaction_1.sanitizeFinding)
         .filter((finding) => shouldKeepFinding(finding, config, trackedFiles));
 }
 function finalizeFindings(findings, config, trackedFiles) {
     return findings
         .map((finding) => applySeverityOverride(finding, config))
+        .map(redaction_1.sanitizeFinding)
         .filter((finding) => shouldKeepFinding(finding, config, trackedFiles));
 }
 function shouldKeepFinding(finding, config, trackedFiles) {
@@ -42056,7 +42243,9 @@ function checkGithubActions(context) {
         return [];
     }
     const findings = [];
-    const references = parseYamlDocuments(context.content).flatMap((document) => collectStringProperties(document, 'uses'));
+    const documents = parseYamlDocuments(context.content);
+    const references = documents.flatMap((document) => collectStringProperties(document, 'uses'));
+    const runnerReferences = documents.flatMap((document) => collectGithubActionsRunnerReferences(document, context.lines));
     for (const reference of references) {
         const line = lineForYamlScalar(context.lines, 'uses', reference);
         const findingForReference = checkActionReference(context.file, line, reference);
@@ -42064,7 +42253,13 @@ function checkGithubActions(context) {
             findings.push(findingForReference);
         }
     }
-    if (references.length > 0) {
+    for (const runnerReference of runnerReferences) {
+        const findingForRunner = checkGithubActionsRunnerLabel(context.file, runnerReference.line, runnerReference.label);
+        if (findingForRunner) {
+            findings.push(findingForRunner);
+        }
+    }
+    if (documents.length > 0 && (references.length > 0 || runnerReferences.length > 0)) {
         return findings;
     }
     return checkGithubActionsWithLineFallback(context);
@@ -42089,15 +42284,34 @@ function checkActionReference(file, line, reference) {
     }
     return finding(constants_1.SHORT_SHA_PATTERN.test(ref) ? 'github-actions/full-sha' : 'github-actions/sha-pin', 'github-actions', file, line, 'high', `Action '${reference}' is pinned to '${ref}', not a full commit SHA.`, 'Replace branch, tag, or short SHA refs with a full 40-character commit SHA.');
 }
+function checkGithubActionsRunnerLabel(file, line, label) {
+    if (!isFloatingGithubHostedRunnerLabel(label)) {
+        return undefined;
+    }
+    return finding('github-actions/versioned-runner', 'github-actions', file, line, 'medium', `GitHub-hosted runner label '${label}' can move to a new image without a workflow change.`, 'Use a versioned runner label such as ubuntu-24.04, windows-2025, or macos-15.');
+}
 function checkGithubActionsWithLineFallback(context) {
-    return context.lines.flatMap((line, index) => {
+    const findings = [];
+    context.lines.forEach((line, index) => {
         const usesMatch = line.match(/\buses:\s*['"]?([^'"\s#]+)['"]?/);
-        if (!usesMatch) {
-            return [];
+        if (usesMatch) {
+            const findingForReference = checkActionReference(context.file, index + 1, usesMatch[1]);
+            if (findingForReference) {
+                findings.push(findingForReference);
+            }
         }
-        const findingForReference = checkActionReference(context.file, index + 1, usesMatch[1]);
-        return findingForReference ? [findingForReference] : [];
+        const runsOnMatch = line.match(/\bruns-on:\s*(.+)$/);
+        if (!runsOnMatch) {
+            return;
+        }
+        for (const label of parseFallbackRunsOnLabels(runsOnMatch[1])) {
+            const findingForRunner = checkGithubActionsRunnerLabel(context.file, index + 1, label);
+            if (findingForRunner) {
+                findings.push(findingForRunner);
+            }
+        }
     });
+    return findings;
 }
 function checkDockerLikeFiles(context) {
     if (!isDockerLikeFile(context.file)) {
@@ -42502,6 +42716,9 @@ function hasGoPseudoVersion(value) {
     return /\bv\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?-\d{14}-[a-f0-9]{12}\b/i.test(value);
 }
 function checkRust(context) {
+    if (isRustToolchainFile(context.file)) {
+        return checkRustToolchain(context);
+    }
     if (!context.file.endsWith('Cargo.toml')) {
         return [];
     }
@@ -42519,6 +42736,72 @@ function checkRust(context) {
         }
     }
     return findings;
+}
+function checkRustToolchain(context) {
+    const channel = parseRustToolchainTomlChannel(context.lines) ??
+        (isLegacyRustToolchainFile(context.file)
+            ? parseLegacyRustToolchainChannel(context.lines)
+            : undefined);
+    if (!channel || !isFloatingRustToolchainChannel(channel.value)) {
+        return [];
+    }
+    return [
+        finding('rust/toolchain-version', 'rust', context.file, channel.line, 'medium', `Rust toolchain channel '${channel.value}' can change over time.`, 'Pin the Rust toolchain to an exact version such as "1.78.0" or a dated channel such as "nightly-2024-05-01".')
+    ];
+}
+function parseRustToolchainTomlChannel(lines) {
+    let section = '';
+    for (let index = 0; index < lines.length; index += 1) {
+        const stripped = stripTomlComment(lines[index]).trim();
+        if (!stripped) {
+            continue;
+        }
+        const sectionMatch = stripped.match(/^\[([^\]]+)\]$/);
+        if (sectionMatch) {
+            section = sectionMatch[1].trim();
+            continue;
+        }
+        if (section !== 'toolchain') {
+            continue;
+        }
+        const assignment = stripped.match(/^channel\s*=\s*(.+)$/);
+        if (!assignment) {
+            continue;
+        }
+        const value = normalizeTomlScalar(assignment[1]);
+        return value ? { value, line: index + 1 } : undefined;
+    }
+    return undefined;
+}
+function parseLegacyRustToolchainChannel(lines) {
+    const entries = lines
+        .map((line, index) => ({
+        text: stripTomlComment(line).trim(),
+        line: index + 1
+    }))
+        .filter((entry) => entry.text.length > 0);
+    if (entries.length !== 1 || entries[0].text.startsWith('[') || entries[0].text.includes('=')) {
+        return undefined;
+    }
+    const value = normalizeTomlScalar(entries[0].text);
+    return value ? { value, line: entries[0].line } : undefined;
+}
+function normalizeTomlScalar(value) {
+    const trimmed = value.trim().replace(/,$/, '').trim();
+    const quoted = trimmed.match(/^(['"])(.*)\1$/);
+    if (quoted) {
+        return quoted[2].trim();
+    }
+    return /^[A-Za-z0-9_.+-]+$/.test(trimmed) ? trimmed : undefined;
+}
+function isFloatingRustToolchainChannel(value) {
+    const normalized = value.trim().toLowerCase();
+    const channel = normalized.match(/^(stable|beta|nightly)(?:-(.+))?$/);
+    if (!channel) {
+        return false;
+    }
+    const qualifier = channel[2];
+    return !qualifier || !/^\d{4}-\d{2}-\d{2}(?:-.+)?$/.test(qualifier);
 }
 function parseRustDependencyEntries(lines) {
     const entries = [];
@@ -42958,6 +43241,12 @@ function parenDelta(line) {
 function isWorkflowOrActionFile(file) {
     return file.startsWith('.github/workflows/') || /^action\.ya?ml$/i.test(file);
 }
+function isRustToolchainFile(file) {
+    return file.endsWith('rust-toolchain.toml') || isLegacyRustToolchainFile(file);
+}
+function isLegacyRustToolchainFile(file) {
+    return file === 'rust-toolchain' || file.endsWith('/rust-toolchain');
+}
 function isDockerLikeFile(file) {
     const normalized = file.replaceAll('\\', '/');
     return (isDockerfile(normalized) ||
@@ -42988,6 +43277,104 @@ function collectStringProperties(value, propertyName) {
     const direct = typeof value[propertyName] === 'string' ? [value[propertyName]] : [];
     const nested = Object.values(value).flatMap((entry) => collectStringProperties(entry, propertyName));
     return [...direct, ...nested];
+}
+function collectGithubActionsRunnerReferences(document, lines) {
+    if (!isRecord(document) || !isRecord(document.jobs)) {
+        return [];
+    }
+    return Object.values(document.jobs).flatMap((job) => {
+        if (!isRecord(job)) {
+            return [];
+        }
+        return collectJobRunnerReferences(job, lines);
+    });
+}
+function collectJobRunnerReferences(job, lines) {
+    const runsOn = job['runs-on'];
+    if (typeof runsOn === 'string') {
+        const matrixAxis = matrixAxisFromRunsOn(runsOn);
+        if (matrixAxis) {
+            return collectMatrixRunnerReferences(job, matrixAxis, lines);
+        }
+        return [
+            {
+                label: runsOn,
+                line: lineForYamlScalar(lines, 'runs-on', runsOn)
+            }
+        ];
+    }
+    if (Array.isArray(runsOn)) {
+        return runsOn.flatMap((label) => typeof label === 'string'
+            ? [
+                {
+                    label,
+                    line: lineForYamlArrayValue(lines, 'runs-on', label)
+                }
+            ]
+            : []);
+    }
+    return [];
+}
+function collectMatrixRunnerReferences(job, axis, lines) {
+    if (!isRecord(job.strategy) || !isRecord(job.strategy.matrix)) {
+        return [];
+    }
+    const references = [];
+    const axisValues = job.strategy.matrix[axis];
+    if (typeof axisValues === 'string') {
+        references.push({
+            label: axisValues,
+            line: lineForYamlValue(lines, axis, axisValues)
+        });
+    }
+    else if (Array.isArray(axisValues)) {
+        references.push(...axisValues.flatMap((label) => typeof label === 'string'
+            ? [
+                {
+                    label,
+                    line: lineForYamlArrayValue(lines, axis, label)
+                }
+            ]
+            : []));
+    }
+    const include = job.strategy.matrix.include;
+    if (Array.isArray(include)) {
+        references.push(...include.flatMap((entry) => {
+            if (!isRecord(entry) || typeof entry[axis] !== 'string') {
+                return [];
+            }
+            return [
+                {
+                    label: entry[axis],
+                    line: lineForYamlValue(lines, axis, entry[axis])
+                }
+            ];
+        }));
+    }
+    return references;
+}
+function matrixAxisFromRunsOn(runsOn) {
+    return runsOn.match(/^\s*\$\{\{\s*matrix\.([A-Za-z_][A-Za-z0-9_-]*)\s*\}\}\s*$/)?.[1];
+}
+function isFloatingGithubHostedRunnerLabel(label) {
+    return /^(ubuntu|windows|macos)-latest$/.test(label.trim());
+}
+function parseFallbackRunsOnLabels(value) {
+    const withoutComment = value.replace(/\s+#.*$/, '').trim();
+    if (!withoutComment || withoutComment.includes('${{')) {
+        return [];
+    }
+    if (withoutComment.startsWith('[') && withoutComment.endsWith(']')) {
+        return withoutComment
+            .slice(1, -1)
+            .split(',')
+            .map((entry) => unquoteYamlScalar(entry.trim()))
+            .filter(Boolean);
+    }
+    return [unquoteYamlScalar(withoutComment)].filter(Boolean);
+}
+function unquoteYamlScalar(value) {
+    return value.replace(/^['"]|['"]$/g, '').trim();
 }
 function terraformBlocks(context) {
     const blocks = [];
@@ -43410,6 +43797,51 @@ function lineForYamlScalar(lines, key, value) {
     const index = lines.findIndex((line) => pattern.test(line.trim()));
     return index === -1 ? lineForText(lines, value) : index + 1;
 }
+function lineForYamlValue(lines, key, value) {
+    const escapedKey = escapeRegExp(key);
+    const escapedValue = escapeRegExp(value);
+    const keyAndValuePattern = new RegExp(`\\b${escapedKey}\\b.*${escapedValue}`);
+    const keyAndValueIndex = lines.findIndex((line) => keyAndValuePattern.test(line.trim()));
+    if (keyAndValueIndex !== -1) {
+        return keyAndValueIndex + 1;
+    }
+    return lineForYamlScalar(lines, key, value);
+}
+function lineForYamlArrayValue(lines, key, value) {
+    const escapedKey = escapeRegExp(key);
+    const escapedValue = escapeRegExp(value);
+    const inlineArrayPattern = new RegExp(`\\b${escapedKey}\\b.*\\[.*${escapedValue}`);
+    const inlineArrayIndex = lines.findIndex((line) => inlineArrayPattern.test(line.trim()));
+    if (inlineArrayIndex !== -1) {
+        return inlineArrayIndex + 1;
+    }
+    const listItemPattern = new RegExp(`^\\s*-\\s*['"]?${escapedValue}['"]?(?:\\s+#.*)?$`);
+    const keyOnlyPattern = new RegExp(`^\\s*${escapedKey}\\s*:\\s*(?:#.*)?$`);
+    for (const [keyIndex, line] of lines.entries()) {
+        if (!keyOnlyPattern.test(line)) {
+            continue;
+        }
+        const keyIndent = line.search(/\S/);
+        for (let index = keyIndex + 1; index < lines.length; index += 1) {
+            const candidate = lines[index];
+            if (!candidate.trim() || candidate.trim().startsWith('#')) {
+                continue;
+            }
+            const candidateIndent = candidate.search(/\S/);
+            if (candidateIndent <= keyIndent || !/^\s*-/.test(candidate)) {
+                break;
+            }
+            if (listItemPattern.test(candidate)) {
+                return index + 1;
+            }
+        }
+    }
+    const listItemIndex = lines.findIndex((line) => listItemPattern.test(line));
+    if (listItemIndex !== -1) {
+        return listItemIndex + 1;
+    }
+    return lineForYamlValue(lines, key, value);
+}
 function escapeRegExp(value) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -43501,12 +43933,16 @@ async function scan(options) {
     const files = await discoverFiles(options.root, options.include, options.exclude, options.config);
     const trackedFiles = new Set(files);
     const staticFindings = files.flatMap((file) => (0, rules_1.evaluateFile)(options.root, file, options.config, trackedFiles));
+    const remoteResult = options.config.remoteValidation === true
+        ? await (0, remote_1.validateRemoteReferences)(options.root, files, options.config)
+        : { findings: [], diagnostics: [] };
     const remoteFindings = options.config.remoteValidation === true
-        ? (0, rules_1.finalizeFindings)(await (0, remote_1.validateRemoteReferences)(options.root, files, options.config), options.config, trackedFiles)
+        ? (0, rules_1.finalizeFindings)(remoteResult.findings, options.config, trackedFiles)
         : [];
     return {
         findings: [...staticFindings, ...remoteFindings],
-        scannedFiles: files
+        scannedFiles: files,
+        diagnostics: remoteResult.diagnostics
     };
 }
 async function discoverFiles(root, include = constants_1.DEFAULT_INCLUDE, exclude = constants_1.DEFAULT_EXCLUDE, config = {}) {
@@ -49481,6 +49917,7 @@ async function run() {
     const sarifInput = (0, config_1.normalizeBooleanInput)(core.getInput('sarif'), 'sarif', true);
     const patchInput = (0, config_1.normalizeBooleanInput)(core.getInput('patch'), 'patch', config.patch ?? false);
     const remoteValidationInput = (0, config_1.normalizeBooleanInput)(core.getInput('remote-validation'), 'remote-validation', config.remoteValidation ?? false);
+    const remoteTokenPolicyInput = (0, config_1.normalizeRemoteTokenPolicyInput)(core.getInput('remote-token-policy'), config.remoteTokenPolicy ?? 'auto');
     const remoteValidationTimeoutMsInput = (0, config_1.normalizePositiveIntegerInput)(core.getInput('remote-timeout-ms'), 'remote-timeout-ms', config.remoteValidationTimeoutMs ?? 5000);
     const remoteValidationRetriesInput = (0, config_1.normalizePositiveIntegerInput)(core.getInput('remote-retries'), 'remote-retries', config.remoteValidationRetries ?? 1);
     for (const diagnostic of [
@@ -49489,6 +49926,7 @@ async function run() {
         ...sarifInput.diagnostics,
         ...patchInput.diagnostics,
         ...remoteValidationInput.diagnostics,
+        ...remoteTokenPolicyInput.diagnostics,
         ...remoteValidationTimeoutMsInput.diagnostics,
         ...remoteValidationRetriesInput.diagnostics
     ]) {
@@ -49501,6 +49939,7 @@ async function run() {
     const sarif = sarifInput.value;
     const patch = patchInput.value;
     const remoteValidation = remoteValidationInput.value;
+    const remoteTokenPolicy = remoteTokenPolicyInput.value;
     const remoteValidationTimeoutMs = remoteValidationTimeoutMsInput.value;
     const remoteValidationRetries = remoteValidationRetriesInput.value;
     const result = await (0, scanner_1.scan)({
@@ -49510,10 +49949,14 @@ async function run() {
         config: {
             ...config,
             remoteValidation,
+            remoteTokenPolicy,
             remoteValidationTimeoutMs,
             remoteValidationRetries
         }
     });
+    for (const diagnostic of result.diagnostics) {
+        core.warning(diagnostic.message);
+    }
     for (const finding of result.findings) {
         core.warning(`${finding.message} ${finding.remediation}`, {
             file: finding.file,

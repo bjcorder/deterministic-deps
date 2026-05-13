@@ -16,7 +16,7 @@ on:
 
 jobs:
   deterministic-deps:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       security-events: write
@@ -55,7 +55,7 @@ on:
 
 jobs:
   deterministic-deps:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       security-events: write
@@ -85,7 +85,7 @@ on:
 
 jobs:
   deterministic-deps:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       security-events: write
@@ -115,24 +115,26 @@ path details.
 
 ## Inputs
 
-| Input                | Default                    | Description                                                                     |
-| -------------------- | -------------------------- | ------------------------------------------------------------------------------- |
-| `mode`               | `advisory`                 | Use `advisory` to report only or `enforce` to fail at the configured threshold. |
-| `path`               | `.`                        | Repository path to scan.                                                        |
-| `config`             | `.deterministic-deps.yml`  | Optional YAML config path, relative to `path`.                                  |
-| `include`            | supported dependency files | Newline or comma-separated glob patterns.                                       |
-| `exclude`            | common vendor/build dirs   | Newline or comma-separated glob patterns.                                       |
-| `severity-threshold` | `low`                      | Minimum severity that fails the action in enforce mode.                         |
-| `sarif`              | `true`                     | Write a SARIF report for code scanning upload.                                  |
-| `patch`              | `false`                    | Write a unified diff with safe remediation suggestions.                         |
-| `remote-validation`  | `false`                    | Opt in to remote validation of immutable GitHub commit references.              |
-| `remote-timeout-ms`  | `5000`                     | Per-request timeout for remote validation.                                      |
-| `remote-retries`     | `1`                        | Retry count for transient remote validation failures.                           |
+| Input                 | Default                    | Description                                                                     |
+| --------------------- | -------------------------- | ------------------------------------------------------------------------------- |
+| `mode`                | `advisory`                 | Use `advisory` to report only or `enforce` to fail at the configured threshold. |
+| `path`                | `.`                        | Repository path to scan.                                                        |
+| `config`              | `.deterministic-deps.yml`  | Optional YAML config path, relative to `path`.                                  |
+| `include`             | supported dependency files | Newline or comma-separated glob patterns.                                       |
+| `exclude`             | common vendor/build dirs   | Newline or comma-separated glob patterns.                                       |
+| `severity-threshold`  | `low`                      | Minimum severity that fails the action in enforce mode.                         |
+| `sarif`               | `true`                     | Write a SARIF report for code scanning upload.                                  |
+| `patch`               | `false`                    | Write a unified diff with safe remediation suggestions.                         |
+| `remote-validation`   | `false`                    | Opt in to remote validation of immutable GitHub commit references.              |
+| `remote-token-policy` | `auto`                     | Controls whether `GITHUB_TOKEN` may be sent during remote validation.           |
+| `remote-timeout-ms`   | `5000`                     | Per-request timeout for remote validation.                                      |
+| `remote-retries`      | `1`                        | Retry count for transient remote validation failures.                           |
 
 Invalid direct inputs emit GitHub Actions warnings and fall back deterministically to the matching
 config value when one exists, or to the default above. Accepted values are `advisory` or `enforce`
-for `mode`; `low`, `medium`, or `high` for `severity-threshold`; `true` or `false` for boolean
-inputs; and non-negative integers for remote timeout and retry inputs.
+for `mode`; `low`, `medium`, or `high` for `severity-threshold`; `auto` or `never` for
+`remote-token-policy`; `true` or `false` for boolean inputs; and non-negative integers for remote
+timeout and retry inputs.
 
 ## Outputs
 
@@ -148,17 +150,17 @@ inputs; and non-negative integers for remote timeout and retry inputs.
 
 ## Supported Ecosystems
 
-| Ecosystem              | V1 coverage                                                                                    |
-| ---------------------- | ---------------------------------------------------------------------------------------------- |
-| GitHub Actions         | Workflow and action `uses:` refs, reusable workflows, and `docker://` action image references. |
-| Containers             | Dockerfiles, Docker Compose files, and devcontainer image references.                          |
-| Terraform and OpenTofu | Git module refs, provider constraints, and `.terraform.lock.hcl` coverage.                     |
-| Node.js                | npm, Yarn, and pnpm manifests and lockfiles.                                                   |
-| Python                 | `requirements*.txt`, `pyproject.toml`, Pipfile, Poetry, uv, and Pipenv lockfile coverage.      |
-| Go                     | `go.mod`, `go.sum`, and git-like replacement refs.                                             |
-| Rust                   | `Cargo.toml`, `Cargo.lock`, and git dependency revisions.                                      |
-| JVM                    | Maven `pom.xml`, Gradle Groovy/Kotlin builds, and Gradle lock or verification metadata.        |
-| Ruby                   | Gemfile dependency refs and `Gemfile.lock` coverage.                                           |
+| Ecosystem              | V1 coverage                                                                                                      |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| GitHub Actions         | Workflow and action `uses:` refs, reusable workflows, `runs-on` labels, and `docker://` action image references. |
+| Containers             | Dockerfiles, Docker Compose files, and devcontainer image references.                                            |
+| Terraform and OpenTofu | Git module refs, provider constraints, and `.terraform.lock.hcl` coverage.                                       |
+| Node.js                | npm, Yarn, and pnpm manifests and lockfiles.                                                                     |
+| Python                 | `requirements*.txt`, `pyproject.toml`, Pipfile, Poetry, uv, and Pipenv lockfile coverage.                        |
+| Go                     | `go.mod`, `go.sum`, and git-like replacement refs.                                                               |
+| Rust                   | `Cargo.toml`, `Cargo.lock`, git dependency revisions, and Rust toolchain files.                                  |
+| JVM                    | Maven `pom.xml`, Gradle Groovy/Kotlin builds, and Gradle lock or verification metadata.                          |
+| Ruby                   | Gemfile dependency refs and `Gemfile.lock` coverage.                                                             |
 
 See [docs/ecosystems.md](docs/ecosystems.md) and [docs/rules.md](docs/rules.md) for the full rule catalog.
 
@@ -172,14 +174,18 @@ defaults to `https://api.github.com` and `https://github.com`.
 
 Remote validation may reveal repository names and commit SHAs to the configured GitHub server, can
 be affected by API rate limits, and may be slower than static analysis. Public refs can be validated
-without credentials; when `GITHUB_TOKEN` is present, the action sends it to the configured GitHub
-server for higher rate limits and private repository access.
+without credentials. When `GITHUB_TOKEN` is present, the default `remote-token-policy: auto` sends it
+only to trusted HTTPS GitHub API hosts: `https://api.github.com` for GitHub.com, or a host matching
+`GITHUB_SERVER_URL` for GitHub Enterprise Server. Mismatched, arbitrary, or non-HTTPS API URLs omit
+the token and emit a warning. Use `remote-token-policy: never` to omit the token for every remote
+validation request.
 
 ## Remediation Suggestions
 
 Findings may include structured suggestions when the scanner can point to a precise replacement. Markdown reports show these suggestions, SARIF includes `fixes` for safe exact-line replacements, and `patch: true` writes a unified diff to `deterministic-deps-report/suggestions.patch` without modifying source files.
 
 Suggestions are intentionally conservative. The action does not resolve latest SHAs, tags, versions, or digests automatically, so most findings remain guidance-only until a deterministic replacement is already present in the source.
+Credential-bearing dependency strings are redacted in findings and reports. Patch and SARIF fix output skips credential-bearing replacements because those formats preserve source lines.
 
 ## Configuration
 

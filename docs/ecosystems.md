@@ -14,7 +14,7 @@ npm, Yarn, pnpm, Poetry, uv, Pipenv, Go, Rust, Bundler, Maven, and Gradle often 
 
 ## Parser Coverage
 
-GitHub Actions workflows, Compose files, and devcontainer JSON files are parsed before rules are evaluated so comments and unrelated text are ignored. Terraform/OpenTofu checks are block-aware for module sources and provider constraints.
+GitHub Actions workflows, Compose files, and devcontainer JSON files are parsed before rules are evaluated so comments and unrelated text are ignored. GitHub Actions parsing covers action references, reusable workflow references, runner labels, and simple matrix runner-label indirection. Terraform/OpenTofu checks are block-aware for module sources and provider constraints.
 
 Rules are evaluated through a shared registry with per-rule metadata. Ecosystem parsers still share common helpers for YAML/JSON/TOML parsing, line lookup, SHA/digest detection, companion-file checks, severity overrides, and allowlists.
 
@@ -24,7 +24,7 @@ Python requirements files are parsed into logical entries before evaluation, inc
 
 Go module files are parsed by directive, including single-line and block `require`, `replace`, and `exclude` forms. Comments are ignored, and git replacements pass when they use a full commit reference or Go pseudo-version.
 
-Rust manifests are parsed by dependency table, including package, workspace, build, dev, and target dependency sections. Comments and unrelated strings are ignored, and git dependencies must include a full `rev` commit SHA rather than only a branch or tag.
+Rust manifests are parsed by dependency table, including package, workspace, build, dev, and target dependency sections. Comments and unrelated strings are ignored, and git dependencies must include a full `rev` commit SHA rather than only a branch or tag. Rust toolchain files are scanned for floating channels; use exact versions or dated nightly channels for deterministic compiler selection.
 
 Gemfiles are parsed as logical `gem` declarations, including grouped and multi-line declarations. Comments and unrelated strings are ignored, and git dependencies must use a full `ref` commit SHA rather than branch or tag options alone.
 
@@ -53,7 +53,7 @@ Remote validation is opt in with `remote-validation: true`. When enabled, the sc
 
 Remote validation supports GitHub.com and GitHub Enterprise Server. The scanner uses `GITHUB_API_URL` when present, otherwise it uses `https://api.github.com` for GitHub.com and `<GITHUB_SERVER_URL>/api/v3` for GHES. Git dependency URL matching is limited to the configured `GITHUB_SERVER_URL` host, so remote validation does not attempt to validate refs from non-GitHub forges.
 
-Remote validation does not clone repositories or resolve mutable tags. It uses bounded request timeouts and retries, reports missing refs as high-severity findings, and reports rate limits, authorization failures, timeouts, and transient API errors as low-severity validation errors. Public refs can be checked without credentials; `GITHUB_TOKEN` is used when present for private repository access and higher rate limits on the configured GitHub server.
+Remote validation does not clone repositories or resolve mutable tags. It uses bounded request timeouts and retries, reports missing refs as high-severity findings, and reports rate limits, authorization failures, timeouts, and transient API errors as low-severity validation errors. Public refs can be checked without credentials; by default, `GITHUB_TOKEN` is used only for trusted HTTPS GitHub API hosts. Set `remote-token-policy: never` to omit it for every remote-validation request.
 
 ## Known Limits
 
