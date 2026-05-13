@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## 1.1.0 - 2026-05-13
 
 - Added a GitHub Actions runner-label rule that flags floating hosted labels such as
   `ubuntu-latest`, `windows-latest`, and `macos-latest`.
