@@ -142,14 +142,15 @@ path details.
 | `patch`               | `false`                    | Write a unified diff with safe remediation suggestions.                         |
 | `remote-validation`   | `false`                    | Opt in to remote validation of immutable GitHub commit references.              |
 | `remote-token-policy` | `auto`                     | Controls whether `GITHUB_TOKEN` may be sent during remote validation.           |
-| `remote-timeout-ms`   | `5000`                     | Per-request timeout for remote validation.                                      |
-| `remote-retries`      | `1`                        | Retry count for transient remote validation failures.                           |
+| `remote-timeout-ms`   | `5000`                     | Per-request timeout for remote validation; capped at `60000`.                   |
+| `remote-retries`      | `1`                        | Retry count for transient remote validation failures; capped at `10`.           |
 
 Invalid direct inputs emit GitHub Actions warnings and fall back deterministically to the matching
 config value when one exists, or to the default above. Accepted values are `advisory` or `enforce`
 for `mode`; `low`, `medium`, or `high` for `severity-threshold`; `auto` or `never` for
 `remote-token-policy`; `true` or `false` for boolean inputs; and non-negative integers for remote
-timeout and retry inputs.
+timeout and retry inputs. Timeout values above `60000` and retry values above `10` are clamped with
+warnings.
 
 ## Outputs
 

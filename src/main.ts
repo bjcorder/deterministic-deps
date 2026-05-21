@@ -1,5 +1,7 @@
 import { DEFAULT_EXCLUDE, DEFAULT_INCLUDE } from './constants'
 import {
+  MAX_REMOTE_RETRIES,
+  MAX_REMOTE_TIMEOUT_MS,
   loadConfigWithDiagnostics,
   normalizeBooleanInput,
   normalizeModeInput,
@@ -9,6 +11,7 @@ import {
   splitPatterns
 } from './config'
 import { countBySeverity, writeReports } from './report'
+import { DEFAULT_RETRIES, DEFAULT_TIMEOUT_MS } from './remote'
 import { scan, resolveScanRoot } from './scanner'
 import { shouldReportFailure } from './rules'
 
@@ -47,12 +50,14 @@ async function run(): Promise<void> {
   const remoteValidationTimeoutMsInput = normalizePositiveIntegerInput(
     core.getInput('remote-timeout-ms'),
     'remote-timeout-ms',
-    config.remoteValidationTimeoutMs ?? 5000
+    config.remoteValidationTimeoutMs ?? DEFAULT_TIMEOUT_MS,
+    MAX_REMOTE_TIMEOUT_MS
   )
   const remoteValidationRetriesInput = normalizePositiveIntegerInput(
     core.getInput('remote-retries'),
     'remote-retries',
-    config.remoteValidationRetries ?? 1
+    config.remoteValidationRetries ?? DEFAULT_RETRIES,
+    MAX_REMOTE_RETRIES
   )
 
   for (const diagnostic of [
