@@ -9,6 +9,13 @@ gem('tagged',
   git: 'https://github.com/acme/tagged.git',
   tag: 'v1.0.0'
 )
+gem 'braced', {
+  git: 'https://github.com/acme/braced.git',
+  branch: 'main'
+}
+gem 'continued', \
+  git: 'https://github.com/acme/continued.git',
+  branch: 'main'
 gem 'pinned',
   git: 'https://github.com/acme/pinned.git',
   ref: '0123456789abcdef0123456789abcdef01234567'

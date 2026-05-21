@@ -17,7 +17,21 @@
     "ruleId": "ruby/git-ref-sha",
     "ecosystem": "ruby",
     "file": "Gemfile",
-    "line": 17,
+    "line": 12,
+    "severity": "high"
+  },
+  {
+    "ruleId": "ruby/git-ref-sha",
+    "ecosystem": "ruby",
+    "file": "Gemfile",
+    "line": 16,
+    "severity": "high"
+  },
+  {
+    "ruleId": "ruby/git-ref-sha",
+    "ecosystem": "ruby",
+    "file": "Gemfile",
+    "line": 24,
     "severity": "high"
   }
 ]

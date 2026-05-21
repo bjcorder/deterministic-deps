@@ -1766,7 +1766,7 @@ function parseRubyGemEntries(lines: string[]): RubyGemEntry[] {
     | {
         text: string
         line: number
-        parenDepth: number
+        nestingDepth: number
       }
     | undefined
 
@@ -1778,8 +1778,8 @@ function parseRubyGemEntries(lines: string[]): RubyGemEntry[] {
 
     if (active) {
       active.text = `${active.text} ${stripped}`.replace(/\s+/g, ' ')
-      active.parenDepth += parenDelta(stripped)
-      if (active.parenDepth <= 0 && !/,\s*$/.test(stripped)) {
+      active.nestingDepth += nestingDelta(stripped)
+      if (active.nestingDepth <= 0 && !continuesRubyGemEntry(stripped)) {
         entries.push({
           text: active.text,
           line: active.line
@@ -1793,12 +1793,12 @@ function parseRubyGemEntries(lines: string[]): RubyGemEntry[] {
       return
     }
 
-    const parenDepth = parenDelta(stripped)
-    if (parenDepth > 0 || /,\s*$/.test(stripped)) {
+    const nestingDepth = nestingDelta(stripped)
+    if (nestingDepth > 0 || continuesRubyGemEntry(stripped)) {
       active = {
         text: stripped,
         line: index + 1,
-        parenDepth
+        nestingDepth
       }
       return
     }
@@ -1839,7 +1839,11 @@ function stripRubyComment(line: string): string {
   return line
 }
 
-function parenDelta(line: string): number {
+function continuesRubyGemEntry(line: string): boolean {
+  return /(?:,|\\)\s*$/.test(line)
+}
+
+function nestingDelta(line: string): number {
   let quote: '"' | "'" | undefined
   let delta = 0
 
@@ -1856,9 +1860,9 @@ function parenDelta(line: string): number {
       continue
     }
 
-    if (current === '(') {
+    if (current === '(' || current === '{' || current === '[') {
       delta += 1
-    } else if (current === ')') {
+    } else if (current === ')' || current === '}' || current === ']') {
       delta -= 1
     }
   }
