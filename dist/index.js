@@ -42530,7 +42530,7 @@ function parsePyprojectDependencyEntries(lines) {
         }
         if (multilineArray) {
             multilineArray.text += ` ${trimmed}`;
-            if (trimmed.includes(']')) {
+            if (hasTomlArrayClosingBracket(trimmed)) {
                 entries.push(...pythonArrayEntries(multilineArray.text, multilineArray.source, multilineArray.line));
                 multilineArray = undefined;
             }
@@ -42540,7 +42540,7 @@ function parsePyprojectDependencyEntries(lines) {
             const arrayMatch = trimmed.match(/^([A-Za-z0-9_.-]+)\s*=\s*(\[.*)$/);
             if (arrayMatch &&
                 (arrayMatch[1] === 'dependencies' || section.includes('optional-dependencies'))) {
-                if (arrayMatch[2].includes(']')) {
+                if (hasTomlArrayClosingBracket(arrayMatch[2])) {
                     entries.push(...pythonArrayEntries(arrayMatch[2], section, index + 1));
                 }
                 else {
@@ -42591,6 +42591,32 @@ function parseTomlDependencyAssignment(line, source, lineNumber) {
         text: `${match[1]} = ${match[2].trim()}`,
         line: lineNumber
     };
+}
+function hasTomlArrayClosingBracket(text) {
+    let quote;
+    let escaped = false;
+    for (const character of text) {
+        if (escaped) {
+            escaped = false;
+            continue;
+        }
+        if (quote === '"' && character === '\\') {
+            escaped = true;
+            continue;
+        }
+        if ((character === '"' || character === "'") && !quote) {
+            quote = character;
+            continue;
+        }
+        if (quote === character) {
+            quote = undefined;
+            continue;
+        }
+        if (!quote && character === ']') {
+            return true;
+        }
+    }
+    return false;
 }
 function pythonArrayEntries(arrayText, source, fallbackLine) {
     return Array.from(arrayText.matchAll(/["']([^"']+)["']/g), (match) => ({

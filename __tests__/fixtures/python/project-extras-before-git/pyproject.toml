@@ -1,0 +1,5 @@
+[project]
+dependencies = [
+  "requests[security]==2.32.0",
+  "acme @ git+https://github.com/acme/pkg.git@main",
+]

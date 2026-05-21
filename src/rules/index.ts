@@ -853,7 +853,7 @@ function parsePyprojectDependencyEntries(lines: string[]): PythonDependencyEntry
 
     if (multilineArray) {
       multilineArray.text += ` ${trimmed}`
-      if (trimmed.includes(']')) {
+      if (hasTomlArrayClosingBracket(trimmed)) {
         entries.push(
           ...pythonArrayEntries(multilineArray.text, multilineArray.source, multilineArray.line)
         )
@@ -868,7 +868,7 @@ function parsePyprojectDependencyEntries(lines: string[]): PythonDependencyEntry
         arrayMatch &&
         (arrayMatch[1] === 'dependencies' || section.includes('optional-dependencies'))
       ) {
-        if (arrayMatch[2].includes(']')) {
+        if (hasTomlArrayClosingBracket(arrayMatch[2])) {
           entries.push(...pythonArrayEntries(arrayMatch[2], section, index + 1))
         } else {
           multilineArray = { source: section, line: index + 1, text: arrayMatch[2] }
@@ -932,6 +932,39 @@ function parseTomlDependencyAssignment(
     text: `${match[1]} = ${match[2].trim()}`,
     line: lineNumber
   }
+}
+
+function hasTomlArrayClosingBracket(text: string): boolean {
+  let quote: '"' | "'" | undefined
+  let escaped = false
+
+  for (const character of text) {
+    if (escaped) {
+      escaped = false
+      continue
+    }
+
+    if (quote === '"' && character === '\\') {
+      escaped = true
+      continue
+    }
+
+    if ((character === '"' || character === "'") && !quote) {
+      quote = character
+      continue
+    }
+
+    if (quote === character) {
+      quote = undefined
+      continue
+    }
+
+    if (!quote && character === ']') {
+      return true
+    }
+  }
+
+  return false
 }
 
 function pythonArrayEntries(

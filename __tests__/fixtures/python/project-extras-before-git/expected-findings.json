@@ -1,0 +1,9 @@
+[
+  {
+    "ruleId": "python/git-sha",
+    "ecosystem": "python",
+    "file": "pyproject.toml",
+    "line": 2,
+    "severity": "high"
+  }
+]
