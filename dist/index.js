@@ -43544,18 +43544,11 @@ function isNodeSpecDeterministic(rawSpec) {
     if (/^https?:/.test(spec)) {
         return hasContentAddressedUrlReference(spec);
     }
-    if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:#[^#]+)?$/.test(spec)) {
-        return hasCommitReference(spec);
-    }
-    if (/^github:[^#]+#[a-f0-9]{40}$/i.test(spec)) {
-        return true;
-    }
     return isExactVersion(spec);
 }
-function isNodeRegistryVersionSpec(spec) {
-    const trimmed = spec.trim();
-    return (!/^(git\+|git:|github:|https?:|ssh:|file:|workspace:|link:|portal:|patch:)/.test(trimmed) &&
-        !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:#[^#]+)?$/.test(trimmed));
+function isNodeRegistryVersionSpec(rawSpec) {
+    const spec = rawSpec.trim();
+    return !isNodeGitSpec(spec) && !/^(https?:|file:|workspace:|link:|portal:|patch:)/.test(spec);
 }
 function isNodePackageManagerSpec(spec) {
     return /^(npm|yarn|pnpm)@/.test(spec);
@@ -43564,7 +43557,18 @@ function isNodeAliasSpec(spec) {
     return /^npm:[^@]+@/.test(spec) || /^npm:@[^/]+\/[^@]+@/.test(spec);
 }
 function isNodeGitSpec(spec) {
-    return /^(git\+|git:|ssh:|github:)/.test(spec) || isGitReference(spec);
+    return (/^(git\+|git:|ssh:)/.test(spec) ||
+        isNodeHostedGitShortcut(spec) ||
+        isNodeScpGitSpec(spec) ||
+        isGitReference(spec));
+}
+function isNodeHostedGitShortcut(spec) {
+    return (/^(?:github:|gitlab:|bitbucket:)[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:#[^#]+)?$/i.test(spec) ||
+        /^gist:[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)?(?:#[^#]+)?$/i.test(spec) ||
+        /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:#[^#]+)?$/.test(spec));
+}
+function isNodeScpGitSpec(spec) {
+    return /^[^@\s]+@[^:\s]+:[^#\s]+(?:#[^#\s]+)?$/.test(spec);
 }
 function hasContentAddressedUrlReference(spec) {
     return (constants_1.DIGEST_PATTERN.test(spec) ||

@@ -1,0 +1,12 @@
+{
+  "dependencies": {
+    "github-shortcut": "owner/repo#main",
+    "gitlab-shortcut": "gitlab:owner/repo#main",
+    "bitbucket-shortcut": "bitbucket:owner/repo#main",
+    "scp-shortcut": "git@github.com:owner/repo.git#main",
+    "pinned-github-shortcut": "owner/repo#0123456789abcdef0123456789abcdef01234567",
+    "pinned-gitlab-shortcut": "gitlab:owner/repo#0123456789abcdef0123456789abcdef01234567",
+    "pinned-bitbucket-shortcut": "bitbucket:owner/repo#0123456789abcdef0123456789abcdef01234567",
+    "pinned-scp-shortcut": "git@github.com:owner/repo.git#0123456789abcdef0123456789abcdef01234567"
+  }
+}

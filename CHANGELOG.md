@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+- Fixed Node registry range-with-lockfile policy handling so hosted and SCP-like git dependency
+  specs still require immutable commit refs.
+
 ## 1.1.0 - 2026-05-13
 
 - Added a GitHub Actions runner-label rule that flags floating hosted labels such as
