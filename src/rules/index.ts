@@ -2259,18 +2259,19 @@ function isNodeSpecDeterministic(rawSpec: string): boolean {
     return isExactVersion(aliasedSpec)
   }
   if (isNodeGitSpec(spec)) {
-    return hasCommitReference(spec)
+    return hasNodeCommitReference(spec)
   }
   if (/^https?:/.test(spec)) {
     return hasContentAddressedUrlReference(spec)
   }
   if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:#[^#]+)?$/.test(spec)) {
-    return hasCommitReference(spec)
-  }
-  if (/^github:[^#]+#[a-f0-9]{40}$/i.test(spec)) {
-    return true
+    return hasNodeCommitReference(spec)
   }
   return isExactVersion(spec)
+}
+
+function hasNodeCommitReference(value: string): boolean {
+  return /#[a-f0-9]{40}$/i.test(value.trim())
 }
 
 function isNodeRegistryVersionSpec(spec: string): boolean {
