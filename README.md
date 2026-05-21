@@ -1,4 +1,19 @@
-# deterministic-deps
+<p align="center">
+  <img src="docs/assets/deterministic-deps-banner.svg" alt="deterministic-deps" width="640">
+</p>
+
+<p align="center"><strong>Static dependency determinism scanning for GitHub Actions, containers, IaC, and package manifests.</strong></p>
+
+<p align="center">
+  <a href="https://github.com/Ozark-Security-Labs/deterministic-deps/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Ozark-Security-Labs/deterministic-deps/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/Ozark-Security-Labs/deterministic-deps/actions/workflows/security-hygiene.yml"><img alt="Security hygiene" src="https://github.com/Ozark-Security-Labs/deterministic-deps/actions/workflows/security-hygiene.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/Ozark-Security-Labs/deterministic-deps/actions/workflows/codeql.yml"><img alt="CodeQL" src="https://github.com/Ozark-Security-Labs/deterministic-deps/actions/workflows/codeql.yml/badge.svg?branch=main"></a>
+  <a href="LICENSE"><img alt="License: AGPL-3.0-only" src="https://img.shields.io/badge/license-AGPL--3.0--only-blue.svg"></a>
+  <img alt="Node 24+" src="https://img.shields.io/badge/node-24%2B-5FA04E.svg">
+  <a href="https://github.com/Ozark-Security-Labs/deterministic-deps/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/Ozark-Security-Labs/deterministic-deps?sort=semver&display_name=tag"></a>
+</p>
+
+---
 
 `deterministic-deps` is a GitHub Action that reports dependency declarations that can drift over time. It is language-agnostic, works by static analysis only, and favors SHA, digest, hash, exact-version, and lockfile based determinism.
 
