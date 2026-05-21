@@ -192,14 +192,14 @@ export function loadConfig(root: string, configPath: string): Config {
 export function loadConfigWithDiagnostics(root: string, configPath: string): ConfigLoadResult {
   const resolved = path.resolve(root, configPath)
 
-  // Defense-in-depth: refuse a config path that escapes the workspace root.
+  // Defense-in-depth: refuse a config path that escapes the scan root.
   const relative = path.relative(root, resolved)
   if (relative.startsWith('..') || path.isAbsolute(relative)) {
     return {
       config: {},
       diagnostics: [
         {
-          message: `Refusing to load config '${configPath}' because it resolves outside the workspace root.`
+          message: `Refusing to load config '${configPath}' because it resolves outside the scan root.`
         }
       ]
     }
@@ -209,15 +209,30 @@ export function loadConfigWithDiagnostics(root: string, configPath: string): Con
     return { config: {}, diagnostics: [] }
   }
 
+  const containment = validateConfigContainment(root, resolved, configPath)
+  if (!containment.valid) {
+    return { config: {}, diagnostics: containment.diagnostics }
+  }
+
   let stat: fs.Stats
   try {
-    stat = fs.statSync(resolved)
+    stat = fs.statSync(containment.realPath)
   } catch (error) {
     return {
       config: {},
       diagnostics: [
         {
           message: `Unable to stat config '${configPath}': ${error instanceof Error ? error.message : String(error)}.`
+        }
+      ]
+    }
+  }
+  if (!stat.isFile()) {
+    return {
+      config: {},
+      diagnostics: [
+        {
+          message: `Refusing to load config '${configPath}' because it is not a regular file.`
         }
       ]
     }
@@ -233,7 +248,7 @@ export function loadConfigWithDiagnostics(root: string, configPath: string): Con
     }
   }
 
-  const rawContent = fs.readFileSync(resolved, 'utf8')
+  const rawContent = fs.readFileSync(containment.realPath, 'utf8')
   const parsed = parseYamlConfig(rawContent, configPath)
   const diagnostics: ConfigDiagnostic[] = []
 
@@ -275,11 +290,49 @@ export function loadConfigWithDiagnostics(root: string, configPath: string): Con
   }
 }
 
+function validateConfigContainment(
+  root: string,
+  resolvedConfigPath: string,
+  configPath: string
+):
+  | { valid: true; realPath: string; diagnostics: [] }
+  | { valid: false; diagnostics: ConfigDiagnostic[] } {
+  let realRoot: string
+  let realConfigPath: string
+  try {
+    realRoot = fs.realpathSync(root)
+    realConfigPath = fs.realpathSync(resolvedConfigPath)
+  } catch (error) {
+    return {
+      valid: false,
+      diagnostics: [
+        {
+          message: `Unable to resolve config '${configPath}': ${error instanceof Error ? error.message : String(error)}.`
+        }
+      ]
+    }
+  }
+
+  const relative = path.relative(realRoot, realConfigPath)
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    return {
+      valid: false,
+      diagnostics: [
+        {
+          message: `Refusing to load config '${configPath}' because it resolves outside the scan root.`
+        }
+      ]
+    }
+  }
+
+  return { valid: true, realPath: realConfigPath, diagnostics: [] }
+}
+
 function parseYamlConfig(content: string, configPath: string): unknown {
   try {
-    // js-yaml v4's default is already safe; pinning JSON_SCHEMA makes the
-    // intent explicit and immune to future default-schema changes.
-    return yaml.load(content, { schema: yaml.JSON_SCHEMA })
+    // js-yaml v4's default schema is safe and preserves YAML merge-key behavior
+    // that existing policy configs may rely on.
+    return yaml.load(content, { schema: yaml.DEFAULT_SCHEMA })
   } catch (error) {
     throw new Error(
       `Unable to parse ${configPath}: ${error instanceof Error ? error.message : String(error)}`,

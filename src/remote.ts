@@ -361,9 +361,8 @@ function dedupeRemoteReferences(references: RemoteReference[]): RemoteReference[
 
 function parseYamlDocuments(content: string): unknown[] {
   try {
-    // Pin JSON_SCHEMA explicitly; js-yaml v4 defaults are already safe but the
-    // explicit option immunizes against future default-schema changes.
-    return yaml.loadAll(content, undefined, { schema: yaml.JSON_SCHEMA })
+    // Use js-yaml's safe default schema while preserving YAML merge-key behavior.
+    return yaml.loadAll(content, undefined, { schema: yaml.DEFAULT_SCHEMA })
   } catch {
     return []
   }

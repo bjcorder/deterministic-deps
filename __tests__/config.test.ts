@@ -159,6 +159,23 @@ describe('configuration', () => {
     )
   })
 
+  it('preserves YAML merge-key behavior for policy config', () => {
+    const root = tempRepo()
+    fs.writeFileSync(
+      path.join(root, '.deterministic-deps.yml'),
+      ['shared: &policy', '  mode: enforce', '  severity-threshold: high', '<<: *policy', ''].join(
+        '\n'
+      ),
+      'utf8'
+    )
+
+    const result = loadConfigWithDiagnostics(root, '.deterministic-deps.yml')
+
+    expect(result.config.mode).toBe('enforce')
+    expect(result.config.severityThreshold).toBe('high')
+    expect(result.diagnostics).toEqual([])
+  })
+
   it('loads remote validation options from YAML', () => {
     const root = tempRepo()
     fs.writeFileSync(
@@ -380,7 +397,35 @@ describe('configuration', () => {
     expect(result.diagnostics[0].message).toMatch(/exceeds the .*-byte limit/)
   })
 
-  it('refuses to load a config path that resolves outside the workspace root', () => {
+  it('refuses to load a config symlink that resolves outside the scan root', () => {
+    const root = tempRepo()
+    const sibling = fs.mkdtempSync(path.join(os.tmpdir(), 'deterministic-deps-outside-'))
+    const outsideConfig = path.join(sibling, 'escape.yml')
+    const linkPath = path.join(root, '.deterministic-deps.yml')
+    fs.writeFileSync(outsideConfig, 'mode: enforce\n', 'utf8')
+
+    try {
+      fs.symlinkSync(outsideConfig, linkPath, 'file')
+    } catch (error) {
+      const code = typeof error === 'object' && error && 'code' in error ? error.code : undefined
+      if (code === 'EPERM') {
+        return
+      }
+      throw error
+    }
+
+    const result = loadConfigWithDiagnostics(root, '.deterministic-deps.yml')
+
+    expect(result.config).toEqual({})
+    expect(result.diagnostics).toEqual([
+      {
+        message:
+          "Refusing to load config '.deterministic-deps.yml' because it resolves outside the scan root."
+      }
+    ])
+  })
+
+  it('refuses to load a config path that resolves outside the scan root', () => {
     const root = tempRepo()
     const sibling = fs.mkdtempSync(path.join(os.tmpdir(), 'deterministic-deps-outside-'))
     fs.writeFileSync(path.join(sibling, 'escape.yml'), 'mode: enforce\n', 'utf8')
@@ -391,12 +436,27 @@ describe('configuration', () => {
     expect(result.config).toEqual({})
     expect(result.diagnostics).toEqual([
       {
-        message: `Refusing to load config '${escapingPath}' because it resolves outside the workspace root.`
+        message: `Refusing to load config '${escapingPath}' because it resolves outside the scan root.`
       }
     ])
   })
 
-  it('keeps schema enums and ecosystem options aligned with parser constants', () => {
+  it('refuses to load a config directory', () => {
+    const root = tempRepo()
+    fs.mkdirSync(path.join(root, '.deterministic-deps.yml'))
+
+    const result = loadConfigWithDiagnostics(root, '.deterministic-deps.yml')
+
+    expect(result.config).toEqual({})
+    expect(result.diagnostics).toEqual([
+      {
+        message:
+          "Refusing to load config '.deterministic-deps.yml' because it is not a regular file."
+      }
+    ])
+  })
+
+  it('keeps schema enums, limits, and ecosystem options aligned with parser constants', () => {
     const schema = configSchema()
     const properties = schema.properties as Record<string, Record<string, unknown>>
     const definitions = schema.$defs as Record<string, Record<string, unknown>>
@@ -404,6 +464,8 @@ describe('configuration', () => {
 
     expect(properties.mode.enum).toEqual(VALID_MODES)
     expect(properties['remote-token-policy'].enum).toEqual(VALID_REMOTE_TOKEN_POLICIES)
+    expect(properties['remote-timeout-ms'].maximum).toBe(MAX_REMOTE_TIMEOUT_MS)
+    expect(properties['remote-retries'].maximum).toBe(MAX_REMOTE_RETRIES)
     expect(definitions.severity.enum).toEqual(VALID_SEVERITIES)
     expect(Object.keys(ecosystemProperties).sort()).toEqual(Object.keys(ECOSYSTEM_OPTIONS).sort())
 

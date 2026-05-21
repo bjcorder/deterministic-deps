@@ -41193,14 +41193,14 @@ function loadConfig(root, configPath) {
 }
 function loadConfigWithDiagnostics(root, configPath) {
     const resolved = node_path_1.default.resolve(root, configPath);
-    // Defense-in-depth: refuse a config path that escapes the workspace root.
+    // Defense-in-depth: refuse a config path that escapes the scan root.
     const relative = node_path_1.default.relative(root, resolved);
     if (relative.startsWith('..') || node_path_1.default.isAbsolute(relative)) {
         return {
             config: {},
             diagnostics: [
                 {
-                    message: `Refusing to load config '${configPath}' because it resolves outside the workspace root.`
+                    message: `Refusing to load config '${configPath}' because it resolves outside the scan root.`
                 }
             ]
         };
@@ -41208,9 +41208,13 @@ function loadConfigWithDiagnostics(root, configPath) {
     if (!node_fs_1.default.existsSync(resolved)) {
         return { config: {}, diagnostics: [] };
     }
+    const containment = validateConfigContainment(root, resolved, configPath);
+    if (!containment.valid) {
+        return { config: {}, diagnostics: containment.diagnostics };
+    }
     let stat;
     try {
-        stat = node_fs_1.default.statSync(resolved);
+        stat = node_fs_1.default.statSync(containment.realPath);
     }
     catch (error) {
         return {
@@ -41218,6 +41222,16 @@ function loadConfigWithDiagnostics(root, configPath) {
             diagnostics: [
                 {
                     message: `Unable to stat config '${configPath}': ${error instanceof Error ? error.message : String(error)}.`
+                }
+            ]
+        };
+    }
+    if (!stat.isFile()) {
+        return {
+            config: {},
+            diagnostics: [
+                {
+                    message: `Refusing to load config '${configPath}' because it is not a regular file.`
                 }
             ]
         };
@@ -41232,7 +41246,7 @@ function loadConfigWithDiagnostics(root, configPath) {
             ]
         };
     }
-    const rawContent = node_fs_1.default.readFileSync(resolved, 'utf8');
+    const rawContent = node_fs_1.default.readFileSync(containment.realPath, 'utf8');
     const parsed = parseYamlConfig(rawContent, configPath);
     const diagnostics = [];
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -41261,11 +41275,41 @@ function loadConfigWithDiagnostics(root, configPath) {
         diagnostics
     };
 }
+function validateConfigContainment(root, resolvedConfigPath, configPath) {
+    let realRoot;
+    let realConfigPath;
+    try {
+        realRoot = node_fs_1.default.realpathSync(root);
+        realConfigPath = node_fs_1.default.realpathSync(resolvedConfigPath);
+    }
+    catch (error) {
+        return {
+            valid: false,
+            diagnostics: [
+                {
+                    message: `Unable to resolve config '${configPath}': ${error instanceof Error ? error.message : String(error)}.`
+                }
+            ]
+        };
+    }
+    const relative = node_path_1.default.relative(realRoot, realConfigPath);
+    if (relative.startsWith('..') || node_path_1.default.isAbsolute(relative)) {
+        return {
+            valid: false,
+            diagnostics: [
+                {
+                    message: `Refusing to load config '${configPath}' because it resolves outside the scan root.`
+                }
+            ]
+        };
+    }
+    return { valid: true, realPath: realConfigPath, diagnostics: [] };
+}
 function parseYamlConfig(content, configPath) {
     try {
-        // js-yaml v4's default is already safe; pinning JSON_SCHEMA makes the
-        // intent explicit and immune to future default-schema changes.
-        return js_yaml_1.default.load(content, { schema: js_yaml_1.default.JSON_SCHEMA });
+        // js-yaml v4's default schema is safe and preserves YAML merge-key behavior
+        // that existing policy configs may rely on.
+        return js_yaml_1.default.load(content, { schema: js_yaml_1.default.DEFAULT_SCHEMA });
     }
     catch (error) {
         throw new Error(`Unable to parse ${configPath}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
@@ -41890,9 +41934,8 @@ function dedupeRemoteReferences(references) {
 }
 function parseYamlDocuments(content) {
     try {
-        // Pin JSON_SCHEMA explicitly; js-yaml v4 defaults are already safe but the
-        // explicit option immunizes against future default-schema changes.
-        return js_yaml_1.default.loadAll(content, undefined, { schema: js_yaml_1.default.JSON_SCHEMA });
+        // Use js-yaml's safe default schema while preserving YAML merge-key behavior.
+        return js_yaml_1.default.loadAll(content, undefined, { schema: js_yaml_1.default.DEFAULT_SCHEMA });
     }
     catch {
         return [];
