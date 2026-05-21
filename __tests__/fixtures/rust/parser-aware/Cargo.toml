@@ -14,3 +14,23 @@ multiline = {
 
 [workspace.dependencies]
 workspace-floating = { git = "https://github.com/acme/workspace-floating.git", branch = "main" }
+
+[dependencies.subtable-floating]
+git = "https://github.com/acme/subtable-floating.git"
+branch = "main"
+
+[dependencies.subtable-pinned]
+git = "https://github.com/acme/subtable-pinned.git"
+rev = "0123456789abcdef0123456789abcdef01234567"
+
+[target.'cfg(unix)'.dev-dependencies.target-subtable-floating]
+git = "https://github.com/acme/target-subtable-floating.git"
+branch = "main"
+
+[patch.crates-io]
+patch-floating = { git = "https://github.com/acme/patch-floating.git", branch = "main" }
+patch-pinned = { git = "https://github.com/acme/patch-pinned.git", rev = "0123456789abcdef0123456789abcdef01234567" }
+
+[replace]
+"replace-floating:0.1.0" = { git = "https://github.com/acme/replace-floating.git", branch = "main" }
+"replace-pinned:0.1.0" = { git = "https://github.com/acme/replace-pinned.git", rev = "0123456789abcdef0123456789abcdef01234567" }

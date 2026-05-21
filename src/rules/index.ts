@@ -1284,6 +1284,14 @@ function parseRustDependencyEntries(lines: string[]): RustDependencyEntry[] {
         braceDepth: number
       }
     | undefined
+  let activeSubtable: RustDependencyEntry | undefined
+
+  function finishSubtable(): void {
+    if (activeSubtable) {
+      entries.push(activeSubtable)
+      activeSubtable = undefined
+    }
+  }
 
   lines.forEach((line, index) => {
     const stripped = stripTomlComment(line).trim()
@@ -1293,7 +1301,15 @@ function parseRustDependencyEntries(lines: string[]): RustDependencyEntry[] {
 
     const sectionMatch = stripped.match(/^\[([^\]]+)\]$/)
     if (sectionMatch && !active) {
+      finishSubtable()
       section = sectionMatch[1]
+      if (isRustDependencySubtable(section)) {
+        activeSubtable = {
+          name: rustDependencySubtableName(section),
+          text: '',
+          line: index + 1
+        }
+      }
       return
     }
 
@@ -1311,11 +1327,19 @@ function parseRustDependencyEntries(lines: string[]): RustDependencyEntry[] {
       return
     }
 
+    if (activeSubtable) {
+      activeSubtable.text = `${activeSubtable.text} ${stripped}`.trim().replace(/\s+/g, ' ')
+      if (/^git\s*=/.test(stripped)) {
+        activeSubtable.line = index + 1
+      }
+      return
+    }
+
     if (!isRustDependencySection(section)) {
       return
     }
 
-    const assignment = stripped.match(/^([A-Za-z0-9_.-]+)\s*=\s*(.+)$/)
+    const assignment = stripped.match(/^("[^"]+"|'[^']+'|[A-Za-z0-9_.-]+)\s*=\s*(.+)$/)
     if (!assignment) {
       return
     }
@@ -1340,6 +1364,7 @@ function parseRustDependencyEntries(lines: string[]): RustDependencyEntry[] {
     })
   })
 
+  finishSubtable()
   return entries
 }
 
@@ -1380,10 +1405,23 @@ function isRustDependencySection(section: string): boolean {
     section === 'dev-dependencies' ||
     section === 'build-dependencies' ||
     section === 'workspace.dependencies' ||
-    /^target\.[^.]+(?:\.[^.]+)*\.(?:dependencies|dev-dependencies|build-dependencies)$/.test(
-      section
-    )
+    /^target\..+\.(?:dependencies|dev-dependencies|build-dependencies)$/.test(section) ||
+    /^patch\..+$/.test(section) ||
+    section === 'replace'
   )
+}
+
+function isRustDependencySubtable(section: string): boolean {
+  return (
+    /^(?:dependencies|dev-dependencies|build-dependencies)\..+$/.test(section) ||
+    /^workspace\.dependencies\..+$/.test(section) ||
+    /^target\..+\.(?:dependencies|dev-dependencies|build-dependencies)\..+$/.test(section) ||
+    /^patch\..+\..+$/.test(section)
+  )
+}
+
+function rustDependencySubtableName(section: string): string {
+  return section.slice(section.lastIndexOf('.') + 1)
 }
 
 function stripTomlComment(line: string): string {

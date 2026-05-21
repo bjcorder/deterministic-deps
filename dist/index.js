@@ -42807,6 +42807,13 @@ function parseRustDependencyEntries(lines) {
     const entries = [];
     let section = '';
     let active;
+    let activeSubtable;
+    function finishSubtable() {
+        if (activeSubtable) {
+            entries.push(activeSubtable);
+            activeSubtable = undefined;
+        }
+    }
     lines.forEach((line, index) => {
         const stripped = stripTomlComment(line).trim();
         if (!stripped) {
@@ -42814,7 +42821,15 @@ function parseRustDependencyEntries(lines) {
         }
         const sectionMatch = stripped.match(/^\[([^\]]+)\]$/);
         if (sectionMatch && !active) {
+            finishSubtable();
             section = sectionMatch[1];
+            if (isRustDependencySubtable(section)) {
+                activeSubtable = {
+                    name: rustDependencySubtableName(section),
+                    text: '',
+                    line: index + 1
+                };
+            }
             return;
         }
         if (active) {
@@ -42830,10 +42845,17 @@ function parseRustDependencyEntries(lines) {
             }
             return;
         }
+        if (activeSubtable) {
+            activeSubtable.text = `${activeSubtable.text} ${stripped}`.trim().replace(/\s+/g, ' ');
+            if (/^git\s*=/.test(stripped)) {
+                activeSubtable.line = index + 1;
+            }
+            return;
+        }
         if (!isRustDependencySection(section)) {
             return;
         }
-        const assignment = stripped.match(/^([A-Za-z0-9_.-]+)\s*=\s*(.+)$/);
+        const assignment = stripped.match(/^("[^"]+"|'[^']+'|[A-Za-z0-9_.-]+)\s*=\s*(.+)$/);
         if (!assignment) {
             return;
         }
@@ -42855,6 +42877,7 @@ function parseRustDependencyEntries(lines) {
             lineText: line
         });
     });
+    finishSubtable();
     return entries;
 }
 function rustRevSuggestion(file, dependency) {
@@ -42886,7 +42909,18 @@ function isRustDependencySection(section) {
         section === 'dev-dependencies' ||
         section === 'build-dependencies' ||
         section === 'workspace.dependencies' ||
-        /^target\.[^.]+(?:\.[^.]+)*\.(?:dependencies|dev-dependencies|build-dependencies)$/.test(section));
+        /^target\..+\.(?:dependencies|dev-dependencies|build-dependencies)$/.test(section) ||
+        /^patch\..+$/.test(section) ||
+        section === 'replace');
+}
+function isRustDependencySubtable(section) {
+    return (/^(?:dependencies|dev-dependencies|build-dependencies)\..+$/.test(section) ||
+        /^workspace\.dependencies\..+$/.test(section) ||
+        /^target\..+\.(?:dependencies|dev-dependencies|build-dependencies)\..+$/.test(section) ||
+        /^patch\..+\..+$/.test(section));
+}
+function rustDependencySubtableName(section) {
+    return section.slice(section.lastIndexOf('.') + 1);
 }
 function stripTomlComment(line) {
     let quote;
