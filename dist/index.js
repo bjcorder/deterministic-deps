@@ -41724,8 +41724,10 @@ async function validateRemoteReferences(root, files, config) {
         let result = cache.get(key);
         if (!result) {
             if (cache.size >= exports.MAX_REMOTE_REFERENCES) {
-                skippedKeys.add(key);
-                findings.push(remoteLimitFinding(reference));
+                if (!skippedKeys.has(key)) {
+                    skippedKeys.add(key);
+                    findings.push(remoteLimitFinding(reference));
+                }
                 continue;
             }
             result = await validateGithubCommit(reference.owner, reference.repo, reference.sha, config, apiBaseUrl, tokenDecision.headers);

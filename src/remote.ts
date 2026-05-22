@@ -57,8 +57,10 @@ export async function validateRemoteReferences(
     let result = cache.get(key)
     if (!result) {
       if (cache.size >= MAX_REMOTE_REFERENCES) {
-        skippedKeys.add(key)
-        findings.push(remoteLimitFinding(reference))
+        if (!skippedKeys.has(key)) {
+          skippedKeys.add(key)
+          findings.push(remoteLimitFinding(reference))
+        }
         continue
       }
 
