@@ -1,4 +1,19 @@
-# deterministic-deps
+<p align="center">
+  <img src="docs/assets/deterministic-deps-banner.svg" alt="deterministic-deps" width="640">
+</p>
+
+<p align="center"><strong>Static dependency determinism scanning for GitHub Actions, containers, IaC, and package manifests.</strong></p>
+
+<p align="center">
+  <a href="https://github.com/Ozark-Security-Labs/deterministic-deps/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Ozark-Security-Labs/deterministic-deps/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/Ozark-Security-Labs/deterministic-deps/actions/workflows/security-hygiene.yml"><img alt="Security hygiene" src="https://github.com/Ozark-Security-Labs/deterministic-deps/actions/workflows/security-hygiene.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/Ozark-Security-Labs/deterministic-deps/actions/workflows/codeql.yml"><img alt="CodeQL" src="https://github.com/Ozark-Security-Labs/deterministic-deps/actions/workflows/codeql.yml/badge.svg?branch=main"></a>
+  <a href="LICENSE"><img alt="License: AGPL-3.0-only" src="https://img.shields.io/badge/license-AGPL--3.0--only-blue.svg"></a>
+  <img alt="Node 24+" src="https://img.shields.io/badge/node-24%2B-5FA04E.svg">
+  <a href="https://github.com/Ozark-Security-Labs/deterministic-deps/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/Ozark-Security-Labs/deterministic-deps?sort=semver&display_name=tag"></a>
+</p>
+
+---
 
 `deterministic-deps` is a GitHub Action that reports dependency declarations that can drift over time. It is language-agnostic, works by static analysis only, and favors SHA, digest, hash, exact-version, and lockfile based determinism.
 
@@ -127,14 +142,15 @@ path details.
 | `patch`               | `false`                    | Write a unified diff with safe remediation suggestions.                         |
 | `remote-validation`   | `false`                    | Opt in to remote validation of immutable GitHub commit references.              |
 | `remote-token-policy` | `auto`                     | Controls whether `GITHUB_TOKEN` may be sent during remote validation.           |
-| `remote-timeout-ms`   | `5000`                     | Per-request timeout for remote validation.                                      |
-| `remote-retries`      | `1`                        | Retry count for transient remote validation failures.                           |
+| `remote-timeout-ms`   | `5000`                     | Per-request timeout for remote validation; capped at `60000`.                   |
+| `remote-retries`      | `1`                        | Retry count for transient remote validation failures; capped at `10`.           |
 
 Invalid direct inputs emit GitHub Actions warnings and fall back deterministically to the matching
 config value when one exists, or to the default above. Accepted values are `advisory` or `enforce`
 for `mode`; `low`, `medium`, or `high` for `severity-threshold`; `auto` or `never` for
 `remote-token-policy`; `true` or `false` for boolean inputs; and non-negative integers for remote
-timeout and retry inputs.
+timeout and retry inputs. Timeout values above `60000` and retry values above `10` are clamped with
+warnings.
 
 ## Outputs
 
