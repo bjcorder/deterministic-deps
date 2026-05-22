@@ -16,7 +16,7 @@ import { scan, resolveScanRoot } from './scanner'
 import { shouldReportFailure } from './rules'
 
 async function importCore() {
-  return import(/* webpackMode: "eager" */ '@actions/core')
+  return import(/* webpackMode: "eager" */ 'osl-actions-core')
 }
 
 type Core = Awaited<ReturnType<typeof importCore>>

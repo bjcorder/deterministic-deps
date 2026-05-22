@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import yaml from 'js-yaml'
+import yaml from 'osl-js-yaml'
 import { renderMarkdown, renderPatch, renderSarif, writeReports } from '../src/report'
 import { rules } from '../src/rules'
 import { scan } from '../src/scanner'

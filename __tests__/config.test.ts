@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import Ajv2020 from 'ajv/dist/2020'
-import yaml from 'js-yaml'
+import yaml from 'osl-js-yaml'
 import {
   ECOSYSTEM_OPTIONS,
   MAX_CONFIG_FILE_BYTES,

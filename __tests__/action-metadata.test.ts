@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import yaml from 'js-yaml'
+import yaml from 'osl-js-yaml'
 
 describe('action metadata', () => {
   it('does not set metadata defaults for config-overridable policy inputs', () => {

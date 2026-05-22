@@ -112,6 +112,20 @@ This project should model the behavior it recommends:
 - Prefer container image digests in examples when concrete images are used.
 - Keep static analysis offline unless a feature explicitly introduces opt-in network validation.
 
+## Dependency policy
+
+Runtime dependencies in this project (`dependencies` in `package.json`) come exclusively from `Ozark-Security-Labs/osl-*` forks. Do not add, upgrade, or replace a runtime dependency entry that points to any other source.
+
+If a new external library is required:
+
+1. Do **NOT** modify `package.json`, `package-lock.json`, or any other manifest.
+2. Create `.ozark/fork-proposals/<dep-name>.md` using the template at `.ozark/fork-proposals/_TEMPLATE.md`. Fill every field.
+3. Stop. The maintainer reviews the proposal, runs the fork-and-trim workflow (see `Ozark-Security-Labs/.github/docs/fork-and-trim-workflow.md`), and only then opens a follow-up PR to consume the new fork.
+
+This rule covers runtime dependencies. `devDependencies` (build tooling such as `typescript`, `jest`, `eslint`, `ncc`) remain upstream during the pilot phase; their fork-and-trim treatment is a Phase 2 follow-up. The language toolchain itself (Node, npm) and GitHub Actions (covered by the SHA-pinning rule above) are also out of scope.
+
+The `osl-` prefix applies at every layer: the repo (`Ozark-Security-Labs/osl-<dep>`), the package `name` inside the fork, the consumer's `package.json` entry, and every `import` / `require` in source. Do not import the upstream name once a fork exists.
+
 ## Documentation Updates
 
 Update docs when public behavior changes:

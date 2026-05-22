@@ -1,0 +1,105 @@
+name: fork-proposal-issue
+
+# Mirrors every fork proposal (`.ozark/fork-proposals/<dep>.md`) into a
+# centrally-tracked issue on Ozark-Security-Labs/.github so the maintainer
+# sees all pending proposals across consumer repos in one place.
+#
+# The default GITHUB_TOKEN cannot create issues in another repo. This
+# workflow requires a fine-scoped PAT or GitHub App token stored as a
+# repository secret named OZARK_CROSS_REPO_TOKEN with `issues: write` on
+# Ozark-Security-Labs/.github.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.ozark/fork-proposals/*.md'
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  mirror-proposal:
+    name: mirror fork proposal to central tracker
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: identify new proposal files
+        id: diff
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          # List files added or modified under .ozark/fork-proposals/ in this PR,
+          # excluding the template itself. BASE_SHA/HEAD_SHA come from GitHub's
+          # own event payload (commit SHAs, not user-controlled text).
+          mapfile -t files < <(
+            git diff --name-only --diff-filter=AM "$BASE_SHA" "$HEAD_SHA" -- '.ozark/fork-proposals/*.md' \
+              | grep -v '_TEMPLATE\.md$' || true
+          )
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "no_proposals=true" >> "$GITHUB_OUTPUT"
+            echo "No new proposal files in this PR. Skipping."
+            exit 0
+          fi
+          # Validate filenames: only allow [A-Za-z0-9._-] in the basename, to
+          # defeat any future shell-metacharacter sneak-in from malicious PRs.
+          for f in "${files[@]}"; do
+            base="$(basename "$f" .md)"
+            if ! [[ "$base" =~ ^[A-Za-z0-9._-]+$ ]]; then
+              echo "::error file=$f::Proposal filename has disallowed characters; only [A-Za-z0-9._-] permitted."
+              exit 1
+            fi
+          done
+          {
+            echo "no_proposals=false"
+            echo "files<<EOF"
+            printf '%s\n' "${files[@]}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: mirror each proposal as a central issue
+        if: steps.diff.outputs.no_proposals == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.OZARK_CROSS_REPO_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          CONSUMER_REPO: ${{ github.repository }}
+          PROPOSAL_FILES: ${{ steps.diff.outputs.files }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            dep="$(basename "$file" .md)"
+            title="Fork request: osl-${dep}"
+            existing="$(gh issue list \
+              --repo Ozark-Security-Labs/.github \
+              --state open \
+              --search "in:title \"${title}\"" \
+              --json number \
+              --jq '.[0].number // empty' || true)"
+            body_file="$(mktemp)"
+            {
+              printf 'Proposal filed from `%s` (PR %s).\n\n' "$CONSUMER_REPO" "$PR_URL"
+              printf 'Source file: `%s`\n\n---\n\n' "$file"
+              cat "$file"
+            } > "$body_file"
+            if [ -n "$existing" ]; then
+              echo "Updating existing issue #${existing} for ${dep}"
+              gh issue comment "$existing" \
+                --repo Ozark-Security-Labs/.github \
+                --body-file "$body_file"
+            else
+              echo "Creating new issue for ${dep}"
+              gh issue create \
+                --repo Ozark-Security-Labs/.github \
+                --title "$title" \
+                --body-file "$body_file" \
+                --label fork-request
+            fi
+            rm -f "$body_file"
+          done <<< "$PROPOSAL_FILES"

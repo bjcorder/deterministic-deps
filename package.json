@@ -24,10 +24,10 @@
   "author": "Brian Corder",
   "license": "AGPL-3.0-only",
   "dependencies": {
-    "@actions/core": "3.0.1",
-    "glob": "13.0.6",
-    "js-yaml": "4.1.1",
-    "minimatch": "10.2.5"
+    "osl-actions-core": "github:Ozark-Security-Labs/osl-actions-core#23007f60ab3ee61aefe66202f4790b0c9e6552e4",
+    "osl-glob": "github:Ozark-Security-Labs/osl-glob#3d32991b7f0fcdff9c394e3025b40a6a5e253b44",
+    "osl-js-yaml": "github:Ozark-Security-Labs/osl-js-yaml#721957e87b8fd2716d29c30a859ac816b2768f0f",
+    "osl-minimatch": "github:Ozark-Security-Labs/osl-minimatch#4a0ff5b8e7ab0a3d12c5ef09660994125f759e3b"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
