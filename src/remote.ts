@@ -32,8 +32,9 @@ interface RemoteTokenDecision {
   diagnostics: ConfigDiagnostic[]
 }
 
-const DEFAULT_TIMEOUT_MS = 5000
-const DEFAULT_RETRIES = 1
+export const DEFAULT_TIMEOUT_MS = 5000
+export const DEFAULT_RETRIES = 1
+export const REMOTE_BACKOFF_BASE_MS = 100
 
 export async function validateRemoteReferences(
   root: string,
@@ -198,17 +199,22 @@ async function validateGithubCommit(
     if (attempt === retries) {
       return result
     }
-    await sleep(100 * (attempt + 1))
+    await sleep(REMOTE_BACKOFF_BASE_MS * (attempt + 1))
   }
 
   return { status: 'error', message: 'validation retry loop exited unexpectedly' }
 }
 
-function githubCommitApiUrl(apiBaseUrl: string, owner: string, repo: string, sha: string): string {
+export function githubCommitApiUrl(
+  apiBaseUrl: string,
+  owner: string,
+  repo: string,
+  sha: string
+): string {
   return `${apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${sha}`
 }
 
-function githubApiBaseUrl(): string {
+export function githubApiBaseUrl(): string {
   const apiUrl = process.env.GITHUB_API_URL
   if (apiUrl) {
     return apiUrl.replace(/\/+$/, '')
@@ -226,7 +232,7 @@ function githubServerHost(): string {
   return githubServerUrl().host.toLowerCase()
 }
 
-function githubServerUrl(): URL {
+export function githubServerUrl(): URL {
   const rawUrl = process.env.GITHUB_SERVER_URL || 'https://github.com'
   try {
     return new URL(rawUrl)
@@ -277,7 +283,7 @@ async function fetchGithubCommit(
   }
 }
 
-function githubTokenDecision(apiBaseUrl: string, config: Config): RemoteTokenDecision {
+export function githubTokenDecision(apiBaseUrl: string, config: Config): RemoteTokenDecision {
   const headers: Record<string, string> = {
     Accept: 'application/vnd.github+json',
     'User-Agent': 'deterministic-deps'
@@ -302,7 +308,7 @@ function githubTokenDecision(apiBaseUrl: string, config: Config): RemoteTokenDec
   }
 }
 
-function isTrustedGithubApiBaseUrl(apiBaseUrl: string): boolean {
+export function isTrustedGithubApiBaseUrl(apiBaseUrl: string): boolean {
   let apiUrl: URL
   try {
     apiUrl = new URL(apiBaseUrl)
@@ -355,7 +361,8 @@ function dedupeRemoteReferences(references: RemoteReference[]): RemoteReference[
 
 function parseYamlDocuments(content: string): unknown[] {
   try {
-    return yaml.loadAll(content)
+    // Use js-yaml's safe default schema while preserving YAML merge-key behavior.
+    return yaml.loadAll(content, undefined, { schema: yaml.DEFAULT_SCHEMA })
   } catch {
     return []
   }

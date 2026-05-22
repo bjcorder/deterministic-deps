@@ -39,10 +39,10 @@ inputs:
     description: Controls whether GITHUB_TOKEN may be sent during remote validation. Use auto for trusted GitHub API hosts or never to omit it. Defaults to auto.
     required: false
   remote-timeout-ms:
-    description: Per-request timeout for remote validation. Defaults to 5000.
+    description: Per-request timeout for remote validation. Defaults to 5000; capped at 60000.
     required: false
   remote-retries:
-    description: Retry count for transient remote validation failures. Defaults to 1.
+    description: Retry count for transient remote validation failures. Defaults to 1; capped at 10.
     required: false
 
 outputs:
