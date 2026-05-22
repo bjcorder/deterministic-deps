@@ -64,8 +64,8 @@ ecosystems:
 | `patch`               | Write a unified diff with safe remediation suggestions.                   |
 | `remote-validation`   | Opt in to remote validation of immutable GitHub commit refs.              |
 | `remote-token-policy` | `auto` or `never`; controls remote-validation token forwarding.           |
-| `remote-timeout-ms`   | Per-request remote validation timeout in milliseconds.                    |
-| `remote-retries`      | Retry count for transient remote validation failures.                     |
+| `remote-timeout-ms`   | Per-request remote validation timeout in milliseconds; capped at `60000`. |
+| `remote-retries`      | Retry count for transient remote validation failures; capped at `10`.     |
 | `include`             | Glob patterns to scan.                                                    |
 | `exclude`             | Glob patterns to skip in addition to built-in vendor/build ignores.       |
 | `rules`               | Map of rule id to `true` or `false`.                                      |
@@ -97,7 +97,7 @@ exclude:
 
 ## Validation
 
-Malformed YAML fails the action with a clear parse error because the configured policy cannot be trusted. Invalid individual fields emit warnings and are ignored, so the action falls back to defaults or other valid config entries.
+Malformed YAML fails the action with a clear parse error because the configured policy cannot be trusted. Config files must be regular files under the scan root after symlink resolution and are capped at 1 MiB before parsing. Invalid individual fields emit warnings and are ignored, so the action falls back to defaults or other valid config entries.
 
 Examples that warn and fall back:
 
@@ -117,13 +117,13 @@ when available, otherwise to the action default.
 
 Accepted direct input values:
 
-| Input                                 | Accepted values                             |
-| ------------------------------------- | ------------------------------------------- |
-| `mode`                                | `advisory` or `enforce`                     |
-| `severity-threshold`                  | `low`, `medium`, or `high`                  |
-| `remote-token-policy`                 | `auto` or `never`                           |
-| `sarif`, `patch`, `remote-validation` | `true` or `false`                           |
-| `remote-timeout-ms`, `remote-retries` | Non-negative integers such as `0` or `5000` |
+| Input                                 | Accepted values                                                |
+| ------------------------------------- | -------------------------------------------------------------- |
+| `mode`                                | `advisory` or `enforce`                                        |
+| `severity-threshold`                  | `low`, `medium`, or `high`                                     |
+| `remote-token-policy`                 | `auto` or `never`                                              |
+| `sarif`, `patch`, `remote-validation` | `true` or `false`                                              |
+| `remote-timeout-ms`, `remote-retries` | Non-negative integers; capped at `60000` and `10` respectively |
 
 ## Editor Schema Usage
 
@@ -172,7 +172,7 @@ Remote validation supports GitHub.com and GitHub Enterprise Server. In GitHub Ac
 
 Public commits can be checked without credentials. If `GITHUB_TOKEN` is available in the environment, the default `remote-token-policy: auto` sends it only to trusted HTTPS API hosts: `https://api.github.com` for GitHub.com, or an API host matching `GITHUB_SERVER_URL` for GitHub Enterprise Server. If the API URL is non-HTTPS or does not match the configured GitHub server, the token is omitted and the action emits a deterministic warning. Set `remote-token-policy: never` to omit `GITHUB_TOKEN` for all remote-validation requests.
 
-Enabling remote validation may disclose repository names and commit SHAs to the configured GitHub server and can add latency to CI runs. Sending `GITHUB_TOKEN` can improve rate limits and validate private repositories, but it is not required for public refs.
+Enabling remote validation may disclose repository names and commit SHAs to the configured GitHub server and can add latency to CI runs. Sending `GITHUB_TOKEN` can improve rate limits and validate private repositories, but it is not required for public refs. Each scan validates at most 100 unique remote references to protect CI runtime and API quotas. References beyond that limit produce low-severity `remote/validation-error` findings so enforce mode can fail instead of silently accepting unvalidated refs.
 
 ## Patch Output
 

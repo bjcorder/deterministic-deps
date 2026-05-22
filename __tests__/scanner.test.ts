@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach } from '@jest/globals'
 import { renderMarkdown, renderPatch, renderSarif } from '../src/report'
+import { MAX_REMOTE_REFERENCES } from '../src/remote'
 import { scan } from '../src/scanner'
 import { shouldReportFailure } from '../src/rules'
 import { Finding } from '../src/types'
@@ -674,12 +675,13 @@ describe('deterministic-deps scanner', () => {
     expect(result.findings[0].message).not.toContain('Error:')
   })
 
-  it('caps remote validation fan-out to protect CI runtime and rate limits', async () => {
+  it('caps remote validation fan-out without silently skipping overflow refs', async () => {
     const root = tempRepo()
     const fetchMock = jest.fn().mockResolvedValue({ status: 200 })
     globalThis.fetch = fetchMock
+    const totalReferences = MAX_REMOTE_REFERENCES + 20
     const lines = ['steps:']
-    for (let index = 0; index < 120; index += 1) {
+    for (let index = 0; index < totalReferences; index += 1) {
       const sha = index.toString(16).padStart(40, '0')
       lines.push(`  - uses: actions/checkout@${sha}`)
     }
@@ -692,14 +694,53 @@ describe('deterministic-deps scanner', () => {
       config: { remoteValidation: true, remoteValidationRetries: 0 }
     })
 
-    expect(fetchMock).toHaveBeenCalledTimes(100)
-    expect(result.diagnostics).toEqual(
+    expect(fetchMock).toHaveBeenCalledTimes(MAX_REMOTE_REFERENCES)
+    expect(result.findings).toHaveLength(20)
+    expect(result.findings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          message: 'Remote validation limited to 100 unique references (from 120) to protect CI runtime and API quotas.'
+          ruleId: 'remote/validation-error',
+          ecosystem: 'remote',
+          severity: 'low',
+          message: expect.stringContaining(
+            'was skipped because the scan reached the 100 unique remote reference limit'
+          )
         })
       ])
     )
+    expect(shouldReportFailure(result.findings, 'low')).toBe(true)
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message:
+            'Remote validation limited to 100 unique remote references (from 120) to protect CI runtime and API quotas.'
+        })
+      ])
+    )
+  })
+
+  it('does not count duplicate remote references against the fan-out cap', async () => {
+    const root = tempRepo()
+    const fetchMock = jest.fn().mockResolvedValue({ status: 200 })
+    globalThis.fetch = fetchMock
+    const lines = ['steps:']
+    for (let index = 0; index < MAX_REMOTE_REFERENCES; index += 1) {
+      const sha = index.toString(16).padStart(40, '0')
+      lines.push(`  - uses: actions/checkout@${sha}`)
+    }
+    lines.push('  - uses: actions/checkout@0000000000000000000000000000000000000000')
+    write(root, '.github/workflows/ci.yml', `${lines.join('\n')}\n`)
+
+    const result = await scan({
+      root,
+      include: [],
+      exclude: [],
+      config: { remoteValidation: true, remoteValidationRetries: 0 }
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(MAX_REMOTE_REFERENCES)
+    expect(result.findings).toEqual([])
+    expect(result.diagnostics).toEqual([])
   })
 
   it('validates GitHub-hosted git dependency commit refs when enabled', async () => {

@@ -27,12 +27,16 @@
       "enum": ["auto", "never"]
     },
     "remote-timeout-ms": {
-      "description": "Per-request timeout for remote validation in milliseconds.",
-      "$ref": "#/$defs/nonNegativeInteger"
+      "description": "Per-request timeout for remote validation in milliseconds. Values above 60000 are clamped by the action.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 60000
     },
     "remote-retries": {
-      "description": "Retry count for transient remote validation failures.",
-      "$ref": "#/$defs/nonNegativeInteger"
+      "description": "Retry count for transient remote validation failures. Values above 10 are clamped by the action.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10
     },
     "include": {
       "description": "Glob patterns to scan.",

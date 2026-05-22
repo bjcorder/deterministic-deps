@@ -5,6 +5,7 @@ import Ajv2020 from 'ajv/dist/2020'
 import yaml from 'js-yaml'
 import {
   ECOSYSTEM_OPTIONS,
+  MAX_CONFIG_FILE_BYTES,
   MAX_REMOTE_RETRIES,
   MAX_REMOTE_TIMEOUT_MS,
   VALID_MODES,
@@ -158,6 +159,23 @@ describe('configuration', () => {
     )
   })
 
+  it('preserves YAML merge-key behavior for policy config', () => {
+    const root = tempRepo()
+    fs.writeFileSync(
+      path.join(root, '.deterministic-deps.yml'),
+      ['shared: &policy', '  mode: enforce', '  severity-threshold: high', '<<: *policy', ''].join(
+        '\n'
+      ),
+      'utf8'
+    )
+
+    const result = loadConfigWithDiagnostics(root, '.deterministic-deps.yml')
+
+    expect(result.config.mode).toBe('enforce')
+    expect(result.config.severityThreshold).toBe('high')
+    expect(result.diagnostics).toEqual([])
+  })
+
   it('loads remote validation options from YAML', () => {
     const root = tempRepo()
     fs.writeFileSync(
@@ -180,29 +198,6 @@ describe('configuration', () => {
     expect(config.remoteTokenPolicy).toBe('never')
     expect(config.remoteValidationTimeoutMs).toBe(2500)
     expect(config.remoteValidationRetries).toBe(2)
-  })
-
-  it('clamps oversized remote validation values from YAML config', () => {
-    const root = tempRepo()
-    fs.writeFileSync(
-      path.join(root, '.deterministic-deps.yml'),
-      [
-        'remote-timeout-ms: 999999',
-        'remote-retries: 999',
-        ''
-      ].join('\n'),
-      'utf8'
-    )
-
-    const result = loadConfigWithDiagnostics(root, '.deterministic-deps.yml')
-    expect(result.config.remoteValidationTimeoutMs).toBe(MAX_REMOTE_TIMEOUT_MS)
-    expect(result.config.remoteValidationRetries).toBe(MAX_REMOTE_RETRIES)
-    expect(result.diagnostics.map((diagnostic) => diagnostic.message)).toEqual(
-      expect.arrayContaining([
-        `remote-timeout-ms exceeded maximum ${MAX_REMOTE_TIMEOUT_MS}; clamping to ${MAX_REMOTE_TIMEOUT_MS}.`,
-        `remote-retries exceeded maximum ${MAX_REMOTE_RETRIES}; clamping to ${MAX_REMOTE_RETRIES}.`
-      ])
-    )
   })
 
   it('warns on invalid action inputs and falls back deterministically', () => {
@@ -270,15 +265,6 @@ describe('configuration', () => {
       value: 'auto',
       diagnostics: []
     })
-    expect(normalizePositiveIntegerInput('999999', 'remote-timeout-ms', 5000, MAX_REMOTE_TIMEOUT_MS))
-      .toEqual({
-        value: MAX_REMOTE_TIMEOUT_MS,
-        diagnostics: [
-          {
-            message: `Action input remote-timeout-ms exceeded maximum ${MAX_REMOTE_TIMEOUT_MS}; clamping to ${MAX_REMOTE_TIMEOUT_MS}.`
-          }
-        ]
-      })
   })
 
   it('publishes a schema that accepts the documented configuration example', () => {
@@ -338,7 +324,139 @@ describe('configuration', () => {
     )
   })
 
-  it('keeps schema enums and ecosystem options aligned with parser constants', () => {
+  it('clamps remote timeout and retries that exceed the configured maximums', () => {
+    const timeoutResult = normalizePositiveIntegerInput(
+      String(MAX_REMOTE_TIMEOUT_MS + 1),
+      'remote-timeout-ms',
+      5000,
+      MAX_REMOTE_TIMEOUT_MS
+    )
+    const retriesResult = normalizePositiveIntegerInput(
+      String(MAX_REMOTE_RETRIES + 5),
+      'remote-retries',
+      1,
+      MAX_REMOTE_RETRIES
+    )
+
+    expect(timeoutResult.value).toBe(MAX_REMOTE_TIMEOUT_MS)
+    expect(timeoutResult.diagnostics).toEqual([
+      {
+        message: `Action input remote-timeout-ms (${MAX_REMOTE_TIMEOUT_MS + 1}) exceeds maximum ${MAX_REMOTE_TIMEOUT_MS}; clamping to ${MAX_REMOTE_TIMEOUT_MS}.`
+      }
+    ])
+    expect(retriesResult.value).toBe(MAX_REMOTE_RETRIES)
+    expect(retriesResult.diagnostics).toEqual([
+      {
+        message: `Action input remote-retries (${MAX_REMOTE_RETRIES + 5}) exceeds maximum ${MAX_REMOTE_RETRIES}; clamping to ${MAX_REMOTE_RETRIES}.`
+      }
+    ])
+  })
+
+  it('accepts values at or below the configured maximum without diagnostics', () => {
+    expect(
+      normalizePositiveIntegerInput(
+        String(MAX_REMOTE_TIMEOUT_MS),
+        'remote-timeout-ms',
+        5000,
+        MAX_REMOTE_TIMEOUT_MS
+      )
+    ).toEqual({ value: MAX_REMOTE_TIMEOUT_MS, diagnostics: [] })
+  })
+
+  it('clamps remote timeout values loaded from the YAML config', () => {
+    const root = tempRepo()
+    fs.writeFileSync(
+      path.join(root, '.deterministic-deps.yml'),
+      `remote-timeout-ms: ${MAX_REMOTE_TIMEOUT_MS + 10000}\nremote-retries: ${MAX_REMOTE_RETRIES + 5}\n`,
+      'utf8'
+    )
+
+    const result = loadConfigWithDiagnostics(root, '.deterministic-deps.yml')
+
+    expect(result.config.remoteValidationTimeoutMs).toBe(MAX_REMOTE_TIMEOUT_MS)
+    expect(result.config.remoteValidationRetries).toBe(MAX_REMOTE_RETRIES)
+    expect(result.diagnostics.map((diagnostic) => diagnostic.message)).toEqual(
+      expect.arrayContaining([
+        `remote-timeout-ms (${MAX_REMOTE_TIMEOUT_MS + 10000}) exceeds maximum ${MAX_REMOTE_TIMEOUT_MS}; clamping to ${MAX_REMOTE_TIMEOUT_MS}.`,
+        `remote-retries (${MAX_REMOTE_RETRIES + 5}) exceeds maximum ${MAX_REMOTE_RETRIES}; clamping to ${MAX_REMOTE_RETRIES}.`
+      ])
+    )
+  })
+
+  it('refuses to load a config file larger than the configured byte limit', () => {
+    const root = tempRepo()
+    const configPath = path.join(root, '.deterministic-deps.yml')
+    // Build a YAML mapping whose value blob pushes it just over the limit.
+    const filler = 'x'.repeat(MAX_CONFIG_FILE_BYTES + 1)
+    fs.writeFileSync(configPath, `comment: "${filler}"\n`, 'utf8')
+
+    const result = loadConfigWithDiagnostics(root, '.deterministic-deps.yml')
+
+    expect(result.config).toEqual({})
+    expect(result.diagnostics).toHaveLength(1)
+    expect(result.diagnostics[0].message).toMatch(/exceeds the .*-byte limit/)
+  })
+
+  it('refuses to load a config symlink that resolves outside the scan root', () => {
+    const root = tempRepo()
+    const sibling = fs.mkdtempSync(path.join(os.tmpdir(), 'deterministic-deps-outside-'))
+    const outsideConfig = path.join(sibling, 'escape.yml')
+    const linkPath = path.join(root, '.deterministic-deps.yml')
+    fs.writeFileSync(outsideConfig, 'mode: enforce\n', 'utf8')
+
+    try {
+      fs.symlinkSync(outsideConfig, linkPath, 'file')
+    } catch (error) {
+      const code = typeof error === 'object' && error && 'code' in error ? error.code : undefined
+      if (code === 'EPERM') {
+        return
+      }
+      throw error
+    }
+
+    const result = loadConfigWithDiagnostics(root, '.deterministic-deps.yml')
+
+    expect(result.config).toEqual({})
+    expect(result.diagnostics).toEqual([
+      {
+        message:
+          "Refusing to load config '.deterministic-deps.yml' because it resolves outside the scan root."
+      }
+    ])
+  })
+
+  it('refuses to load a config path that resolves outside the scan root', () => {
+    const root = tempRepo()
+    const sibling = fs.mkdtempSync(path.join(os.tmpdir(), 'deterministic-deps-outside-'))
+    fs.writeFileSync(path.join(sibling, 'escape.yml'), 'mode: enforce\n', 'utf8')
+
+    const escapingPath = path.relative(root, path.join(sibling, 'escape.yml'))
+    const result = loadConfigWithDiagnostics(root, escapingPath)
+
+    expect(result.config).toEqual({})
+    expect(result.diagnostics).toEqual([
+      {
+        message: `Refusing to load config '${escapingPath}' because it resolves outside the scan root.`
+      }
+    ])
+  })
+
+  it('refuses to load a config directory', () => {
+    const root = tempRepo()
+    fs.mkdirSync(path.join(root, '.deterministic-deps.yml'))
+
+    const result = loadConfigWithDiagnostics(root, '.deterministic-deps.yml')
+
+    expect(result.config).toEqual({})
+    expect(result.diagnostics).toEqual([
+      {
+        message:
+          "Refusing to load config '.deterministic-deps.yml' because it is not a regular file."
+      }
+    ])
+  })
+
+  it('keeps schema enums, limits, and ecosystem options aligned with parser constants', () => {
     const schema = configSchema()
     const properties = schema.properties as Record<string, Record<string, unknown>>
     const definitions = schema.$defs as Record<string, Record<string, unknown>>
@@ -346,6 +464,8 @@ describe('configuration', () => {
 
     expect(properties.mode.enum).toEqual(VALID_MODES)
     expect(properties['remote-token-policy'].enum).toEqual(VALID_REMOTE_TOKEN_POLICIES)
+    expect(properties['remote-timeout-ms'].maximum).toBe(MAX_REMOTE_TIMEOUT_MS)
+    expect(properties['remote-retries'].maximum).toBe(MAX_REMOTE_RETRIES)
     expect(definitions.severity.enum).toEqual(VALID_SEVERITIES)
     expect(Object.keys(ecosystemProperties).sort()).toEqual(Object.keys(ECOSYSTEM_OPTIONS).sort())
 

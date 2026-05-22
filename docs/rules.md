@@ -56,11 +56,11 @@ Floating hosted runner aliases such as `ubuntu-latest`, `windows-latest`, and `m
 
 ## Rust
 
-| Rule                     | Severity | Behavior                                                                                |
-| ------------------------ | -------- | --------------------------------------------------------------------------------------- |
-| `rust/lockfile-required` | high     | `Cargo.toml` requires `Cargo.lock` for deterministic application/workspace builds.      |
-| `rust/git-rev-sha`       | high     | Git dependencies in dependency tables must include `rev = "<40-character commit SHA>"`. |
-| `rust/toolchain-version` | medium   | Rust toolchain files must not use floating `stable`, `beta`, or `nightly` channels.     |
+| Rule                     | Severity | Behavior                                                                                                                                |
+| ------------------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `rust/lockfile-required` | high     | `Cargo.toml` requires `Cargo.lock` for deterministic application/workspace builds.                                                      |
+| `rust/git-rev-sha`       | high     | Git dependencies in dependency tables, package subtables, and patch/replace overrides must include `rev = "<40-character commit SHA>"`. |
+| `rust/toolchain-version` | medium   | Rust toolchain files must not use floating `stable`, `beta`, or `nightly` channels.                                                     |
 
 The Rust git revision rule can include a safe patch suggestion when a one-line dependency table already has a full commit SHA in the git URL, such as a `?rev=` query, but lacks the explicit Cargo `rev` field.
 
@@ -88,7 +88,7 @@ Remote validation rules run only when `remote-validation` is enabled.
 
 Remote validation supports GitHub.com and GitHub Enterprise Server through the configured GitHub server API. It does not validate non-GitHub forges or container registry digests.
 
-| Rule                      | Severity | Behavior                                                                                           |
-| ------------------------- | -------- | -------------------------------------------------------------------------------------------------- |
-| `remote/github-ref`       | high     | A pinned GitHub commit SHA used by an action or GitHub-hosted git dependency could not be found.   |
-| `remote/validation-error` | low      | Remote validation could not complete because of timeout, rate limit, authorization, or API errors. |
+| Rule                      | Severity | Behavior                                                                                                                              |
+| ------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `remote/github-ref`       | high     | A pinned GitHub commit SHA used by an action or GitHub-hosted git dependency could not be found.                                      |
+| `remote/validation-error` | low      | Remote validation could not complete because of timeout, rate limit, authorization, API errors, or the 100-unique-reference scan cap. |
