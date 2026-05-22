@@ -70,6 +70,29 @@ describe('renderMarkdown', () => {
     expect(markdown).toContain('rule.b')
   })
 
+  it('escapes file paths and replacement text in Markdown locations', () => {
+    const markdown = renderMarkdown([
+      makeFinding({
+        file: 'pkg|name\npackage.json',
+        suggestion: {
+          title: 'Pin',
+          confidence: 'high',
+          safeToApply: true,
+          replacement: {
+            file: 'pkg-name/package.json',
+            line: 7,
+            oldText: '"dep": "^1.0.0"',
+            newText: '`spoofed`'
+          }
+        }
+      })
+    ])
+
+    expect(markdown).toContain('pkg\\|name package.json:7')
+    expect(markdown).toContain('\\`spoofed\\`')
+    expect(markdown).not.toContain('pkg|name\npackage.json')
+  })
+
   it('redacts credential material that appears in messages', () => {
     const finding = makeFinding({
       message: 'Authorization: Bearer ghp_supersecrettoken1234567890abcdef found in lockfile.'
@@ -191,6 +214,120 @@ describe('renderPatch', () => {
 
     expect(renderPatch(root, [finding])).toBe('')
   })
+
+  it('rejects unsafe replacement paths and patch line injection', () => {
+    const root = tempRepo()
+    fs.writeFileSync(path.join(root, 'package.json'), '"dep": "^1.0.0"\n', 'utf8')
+
+    const unsafeFindings = [
+      makeFinding({
+        suggestion: {
+          title: 'Escape root',
+          confidence: 'high',
+          safeToApply: true,
+          replacement: {
+            file: '../outside/package.json',
+            line: 1,
+            oldText: '"dep": "^1.0.0"',
+            newText: '"dep": "1.0.0"'
+          }
+        }
+      }),
+      makeFinding({
+        suggestion: {
+          title: 'Inject patch line',
+          confidence: 'high',
+          safeToApply: true,
+          replacement: {
+            file: 'package.json',
+            line: 1,
+            oldText: '"dep": "^1.0.0"',
+            newText: '"dep": "1.0.0"\n--- a/other\n+++ b/other'
+          }
+        }
+      })
+    ]
+
+    expect(renderPatch(root, unsafeFindings)).toBe('')
+    const sarif = renderSarif(unsafeFindings) as {
+      runs: Array<{ results: Array<{ fixes?: unknown }> }>
+    }
+    expect(sarif.runs[0].results.every((result) => result.fixes === undefined)).toBe(true)
+  })
+
+  it('rejects patch replacements that resolve outside the root through symlinks', () => {
+    const root = tempRepo()
+    const outside = tempRepo()
+    fs.writeFileSync(path.join(outside, 'package.json'), '"dep": "^1.0.0"\n', 'utf8')
+    fs.symlinkSync(outside, path.join(root, 'outside-link'), 'dir')
+
+    expect(
+      renderPatch(root, [
+        makeFinding({
+          file: 'outside-link/package.json',
+          line: 1,
+          suggestion: {
+            title: 'Pin',
+            confidence: 'high',
+            safeToApply: true,
+            replacement: {
+              file: 'outside-link/package.json',
+              line: 1,
+              oldText: '"dep": "^1.0.0"',
+              newText: '"dep": "1.0.0"'
+            }
+          }
+        })
+      ])
+    ).toBe('')
+  })
+
+  it('omits SARIF fixes when finding and replacement locations disagree', () => {
+    const sarif = renderSarif([
+      makeFinding({
+        file: 'package.json',
+        line: 1,
+        suggestion: {
+          title: 'Pin',
+          confidence: 'high',
+          safeToApply: true,
+          replacement: {
+            file: 'other-package.json',
+            line: 1,
+            oldText: '"dep": "^1.0.0"',
+            newText: '"dep": "1.0.0"'
+          }
+        }
+      })
+    ]) as { runs: Array<{ results: Array<{ fixes?: unknown }> }> }
+
+    expect(sarif.runs[0].results[0].fixes).toBeUndefined()
+  })
+
+  it('allows safe workspace files whose names start with dot dots', () => {
+    const root = tempRepo()
+    fs.writeFileSync(path.join(root, '..package.json'), '"dep": "^1.0.0"\n', 'utf8')
+
+    const patch = renderPatch(root, [
+      makeFinding({
+        file: '..package.json',
+        line: 1,
+        suggestion: {
+          title: 'Pin',
+          confidence: 'high',
+          safeToApply: true,
+          replacement: {
+            file: '..package.json',
+            line: 1,
+            oldText: '"dep": "^1.0.0"',
+            newText: '"dep": "1.0.0"'
+          }
+        }
+      })
+    ])
+
+    expect(patch).toContain('diff --git a/..package.json b/..package.json')
+  })
 })
 
 describe('writeReports', () => {
@@ -233,5 +370,16 @@ describe('writeReports', () => {
     const result = writeReports(root, [makeFinding()], false)
 
     expect(result.sarifPath).toBeUndefined()
+  })
+
+  it('rejects report output directories that resolve outside the scan root', () => {
+    const root = tempRepo()
+    const outside = tempRepo()
+    fs.symlinkSync(outside, path.join(root, 'deterministic-deps-report'), 'dir')
+
+    expect(() => writeReports(root, [makeFinding()], true, true)).toThrow(
+      'Report output directory must resolve inside the scan root.'
+    )
+    expect(fs.existsSync(path.join(outside, 'report.md'))).toBe(false)
   })
 })

@@ -1,6 +1,11 @@
 import fs from 'node:fs'
 import crypto from 'node:crypto'
 import path from 'node:path'
+import {
+  existingAncestorRealpathStaysInsideRoot,
+  normalizeWorkspaceRelativePath,
+  isSafeWorkspaceRelativePath
+} from './paths'
 import { containsCredentialMaterial, sanitizeDisplayValue } from './redaction'
 import { Finding, LineReplacement, ReportResult, Severity } from './types'
 import { Rule, rules as ruleRegistry } from './rules'
@@ -26,6 +31,9 @@ export function writeReports(
   writePatch = false
 ): ReportResult {
   const outputDir = path.join(root, 'deterministic-deps-report')
+  if (!existingAncestorRealpathStaysInsideRoot(root, outputDir)) {
+    throw new Error('Report output directory must resolve inside the scan root.')
+  }
   fs.mkdirSync(outputDir, { recursive: true })
 
   const markdownPath = path.join(outputDir, 'report.md')
@@ -68,7 +76,7 @@ export function renderMarkdown(findings: Finding[]): string {
   lines.push('| --- | --- | --- | --- | --- | --- |')
   for (const finding of findings) {
     lines.push(
-      `| ${finding.severity} | ${finding.ruleId} | ${finding.ecosystem} | ${finding.file}:${finding.line} | ${escapeMarkdown(sanitizeDisplayValue(finding.message))} | ${escapeMarkdown(sanitizeDisplayValue(finding.remediation))} |`
+      `| ${finding.severity} | ${finding.ruleId} | ${finding.ecosystem} | ${escapeMarkdown(sanitizeDisplayValue(finding.file))}:${finding.line} | ${escapeMarkdown(sanitizeDisplayValue(finding.message))} | ${escapeMarkdown(sanitizeDisplayValue(finding.remediation))} |`
     )
   }
 
@@ -82,7 +90,7 @@ export function renderMarkdown(findings: Finding[]): string {
       }
       const replacement = safeReplacement(finding)
       lines.push(
-        `- ${finding.file}:${finding.line} ${escapeMarkdown(sanitizeDisplayValue(suggestion.title))} (confidence: ${suggestion.confidence}; safe patch: ${replacement ? 'yes' : 'no'})`
+        `- ${escapeMarkdown(sanitizeDisplayValue(finding.file))}:${finding.line} ${escapeMarkdown(sanitizeDisplayValue(suggestion.title))} (confidence: ${suggestion.confidence}; safe patch: ${replacement ? 'yes' : 'no'})`
       )
       if (replacement) {
         lines.push(
@@ -140,7 +148,12 @@ export function renderSarif(findings: Finding[]): object {
           }
 
           const replacement = safeReplacement(finding)
-          if (replacement) {
+          if (
+            replacement &&
+            finding.file === replacement.file &&
+            finding.line === replacement.line &&
+            replacement.oldText.length > 0
+          ) {
             result.fixes = [
               {
                 description: {
@@ -248,9 +261,7 @@ export function renderPatch(root: string, findings: Finding[]): string {
 
       return { replacement, safeFile }
     })
-    .filter(
-      (value): value is { replacement: LineReplacement; safeFile: string } => Boolean(value)
-    )
+    .filter((value): value is { replacement: LineReplacement; safeFile: string } => Boolean(value))
     .filter(({ replacement, safeFile }) => replacementMatchesFile(root, safeFile, replacement))
 
   if (replacements.length === 0) {
@@ -279,7 +290,11 @@ function safeReplacement(finding: Finding): LineReplacement | undefined {
     return undefined
   }
 
-  if (replacementContainsCredentialMaterial(suggestion.replacement)) {
+  if (
+    !isSafeWorkspaceRelativePath(suggestion.replacement.file) ||
+    replacementContainsUnsafeLineText(suggestion.replacement) ||
+    replacementContainsCredentialMaterial(suggestion.replacement)
+  ) {
     return undefined
   }
 
@@ -291,6 +306,10 @@ function replacementContainsCredentialMaterial(replacement: LineReplacement): bo
     containsCredentialMaterial(replacement.oldText) ||
     containsCredentialMaterial(replacement.newText)
   )
+}
+
+function replacementContainsUnsafeLineText(replacement: LineReplacement): boolean {
+  return /[\r\n]/.test(replacement.oldText) || /[\r\n]/.test(replacement.newText)
 }
 
 function replacementMatchesFile(
@@ -307,20 +326,6 @@ function replacementMatchesFile(
   return line === replacement.oldText
 }
 
-function normalizeWorkspaceRelativePath(root: string, file: string): string | undefined {
-  if (/[\x00-\x1f\x7f]/.test(file) || file.length === 0) {
-    return undefined
-  }
-
-  const resolved = path.resolve(root, file)
-  const relative = path.relative(root, resolved)
-  if (relative.length === 0 || relative.startsWith('..') || path.isAbsolute(relative)) {
-    return undefined
-  }
-
-  return relative.split(path.sep).join('/')
-}
-
 function sarifLevel(severity: Severity): 'error' | 'warning' | 'note' {
   if (severity === 'high') {
     return 'error'
@@ -332,5 +337,5 @@ function sarifLevel(severity: Severity): 'error' | 'warning' | 'note' {
 }
 
 function escapeMarkdown(value: string): string {
-  return value.replaceAll('|', '\\|').replaceAll('\n', ' ')
+  return value.replaceAll('|', '\\|').replaceAll('`', '\\`').replaceAll('\n', ' ')
 }
