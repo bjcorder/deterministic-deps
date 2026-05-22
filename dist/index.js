@@ -41044,15 +41044,11 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.ECOSYSTEM_OPTIONS = exports.VALID_REMOTE_TOKEN_POLICIES = exports.VALID_MODES = exports.VALID_SEVERITIES = void 0;
+exports.MAX_REMOTE_RETRIES = exports.MAX_REMOTE_TIMEOUT_MS = exports.MAX_CONFIG_FILE_BYTES = exports.ECOSYSTEM_OPTIONS = exports.VALID_REMOTE_TOKEN_POLICIES = exports.VALID_MODES = exports.VALID_SEVERITIES = void 0;
 exports.splitPatterns = splitPatterns;
-exports.normalizeMode = normalizeMode;
 exports.normalizeModeInput = normalizeModeInput;
-exports.normalizeSeverity = normalizeSeverity;
 exports.normalizeSeverityInput = normalizeSeverityInput;
-exports.normalizeBoolean = normalizeBoolean;
 exports.normalizeBooleanInput = normalizeBooleanInput;
-exports.normalizePositiveInteger = normalizePositiveInteger;
 exports.normalizePositiveIntegerInput = normalizePositiveIntegerInput;
 exports.normalizeRemoteTokenPolicyInput = normalizeRemoteTokenPolicyInput;
 exports.loadConfig = loadConfig;
@@ -41072,6 +41068,12 @@ exports.ECOSYSTEM_OPTIONS = {
     rust: ['requireLockfile'],
     terraform: ['requireProviderLock']
 };
+// Defense-in-depth caps. The workflow author controls these inputs in practice,
+// but bounding them keeps a misconfigured value from hanging the runner or
+// exhausting memory during YAML parsing.
+exports.MAX_CONFIG_FILE_BYTES = 1_048_576;
+exports.MAX_REMOTE_TIMEOUT_MS = 60_000;
+exports.MAX_REMOTE_RETRIES = 10;
 function splitPatterns(value) {
     if (!value) {
         return [];
@@ -41080,12 +41082,6 @@ function splitPatterns(value) {
         .split(/[\n,]/)
         .map((part) => part.trim())
         .filter(Boolean);
-}
-function normalizeMode(value, fallback = 'advisory') {
-    if (value === 'advisory' || value === 'enforce') {
-        return value;
-    }
-    return fallback;
 }
 function normalizeModeInput(value, fallback = 'advisory', key = 'mode') {
     if (value === undefined || value === '') {
@@ -41103,12 +41099,6 @@ function normalizeModeInput(value, fallback = 'advisory', key = 'mode') {
         ]
     };
 }
-function normalizeSeverity(value, fallback = 'low') {
-    if (value === 'low' || value === 'medium' || value === 'high') {
-        return value;
-    }
-    return fallback;
-}
 function normalizeSeverityInput(value, fallback = 'low', key = 'severity-threshold') {
     if (value === undefined || value === '') {
         return { value: fallback, diagnostics: [] };
@@ -41124,19 +41114,6 @@ function normalizeSeverityInput(value, fallback = 'low', key = 'severity-thresho
             }
         ]
     };
-}
-function normalizeBoolean(value, fallback) {
-    if (value === undefined || value === '') {
-        return fallback;
-    }
-    const normalized = value.toLowerCase();
-    if (normalized === 'true') {
-        return true;
-    }
-    if (normalized === 'false') {
-        return false;
-    }
-    return fallback;
 }
 function normalizeBooleanInput(value, key, fallback) {
     if (value === undefined || value === '') {
@@ -41158,17 +41135,7 @@ function normalizeBooleanInput(value, key, fallback) {
         ]
     };
 }
-function normalizePositiveInteger(value, fallback) {
-    if (value === undefined || value === '') {
-        return fallback;
-    }
-    if (!/^\d+$/.test(value)) {
-        return fallback;
-    }
-    const parsed = Number.parseInt(value, 10);
-    return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
-}
-function normalizePositiveIntegerInput(value, key, fallback) {
+function normalizePositiveIntegerInput(value, key, fallback, max) {
     if (value === undefined || value === '') {
         return { value: fallback, diagnostics: [] };
     }
@@ -41183,17 +41150,27 @@ function normalizePositiveIntegerInput(value, key, fallback) {
         };
     }
     const parsed = Number.parseInt(value, 10);
-    if (Number.isInteger(parsed) && parsed >= 0) {
-        return { value: parsed, diagnostics: [] };
+    if (!Number.isInteger(parsed) || parsed < 0) {
+        return {
+            value: fallback,
+            diagnostics: [
+                {
+                    message: `Invalid action input ${key}; expected a non-negative integer. Falling back to ${fallback}.`
+                }
+            ]
+        };
     }
-    return {
-        value: fallback,
-        diagnostics: [
-            {
-                message: `Invalid action input ${key}; expected a non-negative integer. Falling back to ${fallback}.`
-            }
-        ]
-    };
+    if (max !== undefined && parsed > max) {
+        return {
+            value: max,
+            diagnostics: [
+                {
+                    message: `Action input ${key} (${parsed}) exceeds maximum ${max}; clamping to ${max}.`
+                }
+            ]
+        };
+    }
+    return { value: parsed, diagnostics: [] };
 }
 function normalizeRemoteTokenPolicyInput(value, fallback = 'auto', key = 'remote-token-policy') {
     if (value === undefined || value === '') {
@@ -41216,10 +41193,60 @@ function loadConfig(root, configPath) {
 }
 function loadConfigWithDiagnostics(root, configPath) {
     const resolved = node_path_1.default.resolve(root, configPath);
+    // Defense-in-depth: refuse a config path that escapes the scan root.
+    const relative = node_path_1.default.relative(root, resolved);
+    if (relative.startsWith('..') || node_path_1.default.isAbsolute(relative)) {
+        return {
+            config: {},
+            diagnostics: [
+                {
+                    message: `Refusing to load config '${configPath}' because it resolves outside the scan root.`
+                }
+            ]
+        };
+    }
     if (!node_fs_1.default.existsSync(resolved)) {
         return { config: {}, diagnostics: [] };
     }
-    const rawContent = node_fs_1.default.readFileSync(resolved, 'utf8');
+    const containment = validateConfigContainment(root, resolved, configPath);
+    if (!containment.valid) {
+        return { config: {}, diagnostics: containment.diagnostics };
+    }
+    let stat;
+    try {
+        stat = node_fs_1.default.statSync(containment.realPath);
+    }
+    catch (error) {
+        return {
+            config: {},
+            diagnostics: [
+                {
+                    message: `Unable to stat config '${configPath}': ${error instanceof Error ? error.message : String(error)}.`
+                }
+            ]
+        };
+    }
+    if (!stat.isFile()) {
+        return {
+            config: {},
+            diagnostics: [
+                {
+                    message: `Refusing to load config '${configPath}' because it is not a regular file.`
+                }
+            ]
+        };
+    }
+    if (stat.size > exports.MAX_CONFIG_FILE_BYTES) {
+        return {
+            config: {},
+            diagnostics: [
+                {
+                    message: `Refusing to load config '${configPath}' (${stat.size} bytes) because it exceeds the ${exports.MAX_CONFIG_FILE_BYTES}-byte limit.`
+                }
+            ]
+        };
+    }
+    const rawContent = node_fs_1.default.readFileSync(containment.realPath, 'utf8');
     const parsed = parseYamlConfig(rawContent, configPath);
     const diagnostics = [];
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -41236,8 +41263,8 @@ function loadConfigWithDiagnostics(root, configPath) {
             patch: readBoolean(raw, 'patch', diagnostics),
             remoteValidation: readBoolean(raw, 'remote-validation', diagnostics),
             remoteTokenPolicy: readRemoteTokenPolicy(raw, diagnostics),
-            remoteValidationTimeoutMs: readPositiveInteger(raw, 'remote-timeout-ms', diagnostics),
-            remoteValidationRetries: readPositiveInteger(raw, 'remote-retries', diagnostics),
+            remoteValidationTimeoutMs: readPositiveInteger(raw, 'remote-timeout-ms', diagnostics, exports.MAX_REMOTE_TIMEOUT_MS),
+            remoteValidationRetries: readPositiveInteger(raw, 'remote-retries', diagnostics, exports.MAX_REMOTE_RETRIES),
             include: readStringArray(raw, 'include', diagnostics),
             exclude: readStringArray(raw, 'exclude', diagnostics),
             rules: readBooleanRecord(raw, 'rules', diagnostics),
@@ -41248,9 +41275,41 @@ function loadConfigWithDiagnostics(root, configPath) {
         diagnostics
     };
 }
+function validateConfigContainment(root, resolvedConfigPath, configPath) {
+    let realRoot;
+    let realConfigPath;
+    try {
+        realRoot = node_fs_1.default.realpathSync(root);
+        realConfigPath = node_fs_1.default.realpathSync(resolvedConfigPath);
+    }
+    catch (error) {
+        return {
+            valid: false,
+            diagnostics: [
+                {
+                    message: `Unable to resolve config '${configPath}': ${error instanceof Error ? error.message : String(error)}.`
+                }
+            ]
+        };
+    }
+    const relative = node_path_1.default.relative(realRoot, realConfigPath);
+    if (relative.startsWith('..') || node_path_1.default.isAbsolute(relative)) {
+        return {
+            valid: false,
+            diagnostics: [
+                {
+                    message: `Refusing to load config '${configPath}' because it resolves outside the scan root.`
+                }
+            ]
+        };
+    }
+    return { valid: true, realPath: realConfigPath, diagnostics: [] };
+}
 function parseYamlConfig(content, configPath) {
     try {
-        return js_yaml_1.default.load(content);
+        // js-yaml v4's default schema is safe and preserves YAML merge-key behavior
+        // that existing policy configs may rely on.
+        return js_yaml_1.default.load(content, { schema: js_yaml_1.default.DEFAULT_SCHEMA });
     }
     catch (error) {
         throw new Error(`Unable to parse ${configPath}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
@@ -41321,18 +41380,24 @@ function readBoolean(raw, key, diagnostics) {
     });
     return undefined;
 }
-function readPositiveInteger(raw, key, diagnostics) {
+function readPositiveInteger(raw, key, diagnostics, max) {
     const value = raw[key];
     if (value === undefined) {
         return undefined;
     }
-    if (typeof value === 'number' && Number.isInteger(value) && value >= 0) {
-        return value;
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+        diagnostics.push({
+            message: `Invalid ${key}; expected a non-negative integer.`
+        });
+        return undefined;
     }
-    diagnostics.push({
-        message: `Invalid ${key}; expected a non-negative integer.`
-    });
-    return undefined;
+    if (max !== undefined && value > max) {
+        diagnostics.push({
+            message: `${key} (${value}) exceeds maximum ${max}; clamping to ${max}.`
+        });
+        return max;
+    }
+    return value;
 }
 function readBooleanRecord(raw, key, diagnostics) {
     const value = raw[key];
@@ -41448,10 +41513,10 @@ function readEcosystems(raw, diagnostics) {
     return ecosystems;
 }
 function isSeverity(value) {
-    return value === 'low' || value === 'medium' || value === 'high';
+    return typeof value === 'string' && exports.VALID_SEVERITIES.includes(value);
 }
 function isRemoteTokenPolicy(value) {
-    return value === 'auto' || value === 'never';
+    return (typeof value === 'string' && exports.VALID_REMOTE_TOKEN_POLICIES.includes(value));
 }
 function isRecord(value) {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -41628,7 +41693,13 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.REMOTE_BACKOFF_BASE_MS = exports.DEFAULT_RETRIES = exports.DEFAULT_TIMEOUT_MS = void 0;
 exports.validateRemoteReferences = validateRemoteReferences;
+exports.githubCommitApiUrl = githubCommitApiUrl;
+exports.githubApiBaseUrl = githubApiBaseUrl;
+exports.githubServerUrl = githubServerUrl;
+exports.githubTokenDecision = githubTokenDecision;
+exports.isTrustedGithubApiBaseUrl = isTrustedGithubApiBaseUrl;
 const node_fs_1 = __importDefault(__nccwpck_require__(3024));
 const node_path_1 = __importDefault(__nccwpck_require__(6760));
 const node_timers_1 = __nccwpck_require__(7997);
@@ -41636,8 +41707,9 @@ const promises_1 = __nccwpck_require__(8500);
 const js_yaml_1 = __importDefault(__nccwpck_require__(4281));
 const constants_1 = __nccwpck_require__(7242);
 const redaction_1 = __nccwpck_require__(1066);
-const DEFAULT_TIMEOUT_MS = 5000;
-const DEFAULT_RETRIES = 1;
+exports.DEFAULT_TIMEOUT_MS = 5000;
+exports.DEFAULT_RETRIES = 1;
+exports.REMOTE_BACKOFF_BASE_MS = 100;
 async function validateRemoteReferences(root, files, config) {
     const references = dedupeRemoteReferences(files.flatMap((file) => collectRemoteReferences(root, file)));
     const cache = new Map();
@@ -41722,8 +41794,8 @@ function collectGithubUrlCommitReferences(file, content, host) {
     return references;
 }
 async function validateGithubCommit(owner, repo, sha, config, apiBaseUrl, headers) {
-    const timeoutMs = config.remoteValidationTimeoutMs ?? DEFAULT_TIMEOUT_MS;
-    const retries = config.remoteValidationRetries ?? DEFAULT_RETRIES;
+    const timeoutMs = config.remoteValidationTimeoutMs ?? exports.DEFAULT_TIMEOUT_MS;
+    const retries = config.remoteValidationRetries ?? exports.DEFAULT_RETRIES;
     const url = githubCommitApiUrl(apiBaseUrl, owner, repo, sha);
     for (let attempt = 0; attempt <= retries; attempt += 1) {
         const result = await fetchGithubCommit(url, timeoutMs, headers);
@@ -41733,7 +41805,7 @@ async function validateGithubCommit(owner, repo, sha, config, apiBaseUrl, header
         if (attempt === retries) {
             return result;
         }
-        await sleep(100 * (attempt + 1));
+        await sleep(exports.REMOTE_BACKOFF_BASE_MS * (attempt + 1));
     }
     return { status: 'error', message: 'validation retry loop exited unexpectedly' };
 }
@@ -41862,7 +41934,8 @@ function dedupeRemoteReferences(references) {
 }
 function parseYamlDocuments(content) {
     try {
-        return js_yaml_1.default.loadAll(content);
+        // Use js-yaml's safe default schema while preserving YAML merge-key behavior.
+        return js_yaml_1.default.loadAll(content, undefined, { schema: js_yaml_1.default.DEFAULT_SCHEMA });
     }
     catch {
         return [];
@@ -41911,6 +41984,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.SARIF_FINGERPRINT_VERSION = void 0;
 exports.countBySeverity = countBySeverity;
 exports.writeReports = writeReports;
 exports.renderMarkdown = renderMarkdown;
@@ -41922,6 +41996,9 @@ const node_path_1 = __importDefault(__nccwpck_require__(6760));
 const redaction_1 = __nccwpck_require__(1066);
 const rules_1 = __nccwpck_require__(5755);
 const RULES_HELP_URI = 'https://github.com/bjcorder/deterministic-deps/blob/main/docs/rules.md';
+// Stable component of the SARIF fingerprint hash. Changing this value
+// invalidates every previously stored fingerprint, so do not bump it casually.
+exports.SARIF_FINGERPRINT_VERSION = 'v1';
 function countBySeverity(findings) {
     return {
         high: findings.filter((finding) => finding.severity === 'high').length,
@@ -42098,7 +42175,7 @@ function sarifFingerprints(finding) {
     return {
         primaryLocationLineHash: stableHash([
             'deterministic-deps',
-            'v1',
+            exports.SARIF_FINGERPRINT_VERSION,
             finding.ruleId,
             finding.file,
             finding.line.toString(),
@@ -42807,6 +42884,13 @@ function parseRustDependencyEntries(lines) {
     const entries = [];
     let section = '';
     let active;
+    let activeSubtable;
+    function finishSubtable() {
+        if (activeSubtable) {
+            entries.push(activeSubtable);
+            activeSubtable = undefined;
+        }
+    }
     lines.forEach((line, index) => {
         const stripped = stripTomlComment(line).trim();
         if (!stripped) {
@@ -42814,7 +42898,15 @@ function parseRustDependencyEntries(lines) {
         }
         const sectionMatch = stripped.match(/^\[([^\]]+)\]$/);
         if (sectionMatch && !active) {
+            finishSubtable();
             section = sectionMatch[1];
+            if (isRustDependencySubtable(section)) {
+                activeSubtable = {
+                    name: rustDependencySubtableName(section),
+                    text: '',
+                    line: index + 1
+                };
+            }
             return;
         }
         if (active) {
@@ -42830,10 +42922,17 @@ function parseRustDependencyEntries(lines) {
             }
             return;
         }
+        if (activeSubtable) {
+            activeSubtable.text = `${activeSubtable.text} ${stripped}`.trim().replace(/\s+/g, ' ');
+            if (/^git\s*=/.test(stripped)) {
+                activeSubtable.line = index + 1;
+            }
+            return;
+        }
         if (!isRustDependencySection(section)) {
             return;
         }
-        const assignment = stripped.match(/^([A-Za-z0-9_.-]+)\s*=\s*(.+)$/);
+        const assignment = stripped.match(/^("[^"]+"|'[^']+'|[A-Za-z0-9_.-]+)\s*=\s*(.+)$/);
         if (!assignment) {
             return;
         }
@@ -42855,6 +42954,7 @@ function parseRustDependencyEntries(lines) {
             lineText: line
         });
     });
+    finishSubtable();
     return entries;
 }
 function rustRevSuggestion(file, dependency) {
@@ -42882,11 +42982,79 @@ function rustRevSuggestion(file, dependency) {
     };
 }
 function isRustDependencySection(section) {
-    return (section === 'dependencies' ||
-        section === 'dev-dependencies' ||
-        section === 'build-dependencies' ||
-        section === 'workspace.dependencies' ||
-        /^target\.[^.]+(?:\.[^.]+)*\.(?:dependencies|dev-dependencies|build-dependencies)$/.test(section));
+    const path = splitTomlDottedPath(section);
+    if (!path) {
+        return false;
+    }
+    return (isRustDependencyRoot(path[0]) ||
+        (path[0] === 'workspace' && path[1] === 'dependencies' && path.length === 2) ||
+        (path[0] === 'target' && path.length >= 3 && isRustDependencyRoot(path[path.length - 1])) ||
+        (path[0] === 'patch' && path.length === 2) ||
+        (path[0] === 'replace' && path.length === 1));
+}
+function isRustDependencySubtable(section) {
+    const path = splitTomlDottedPath(section);
+    if (!path) {
+        return false;
+    }
+    return ((isRustDependencyRoot(path[0]) && path.length >= 2) ||
+        (path[0] === 'workspace' && path[1] === 'dependencies' && path.length >= 3) ||
+        (path[0] === 'target' && path.length >= 4 && isRustDependencyRoot(path[path.length - 2])) ||
+        (path[0] === 'patch' && path.length >= 3));
+}
+function isRustDependencyRoot(segment) {
+    return (segment === 'dependencies' || segment === 'dev-dependencies' || segment === 'build-dependencies');
+}
+function rustDependencySubtableName(section) {
+    const path = splitTomlDottedPath(section);
+    return path?.[path.length - 1] ?? section.slice(section.lastIndexOf('.') + 1);
+}
+function splitTomlDottedPath(section) {
+    const segments = [];
+    let current = '';
+    let quote;
+    let escaped = false;
+    for (let index = 0; index < section.length; index += 1) {
+        const character = section[index];
+        if (quote) {
+            if (escaped) {
+                current += character;
+                escaped = false;
+                continue;
+            }
+            if (quote === '"' && character === '\\') {
+                escaped = true;
+                continue;
+            }
+            if (character === quote) {
+                quote = undefined;
+                continue;
+            }
+            current += character;
+            continue;
+        }
+        if (character === '"' || character === "'") {
+            quote = character;
+            continue;
+        }
+        if (character === '.') {
+            if (!current) {
+                return undefined;
+            }
+            segments.push(current);
+            current = '';
+            continue;
+        }
+        if (/\s/.test(character)) {
+            continue;
+        }
+        current += character;
+    }
+    if (quote || escaped || !current) {
+        return undefined;
+    }
+    segments.push(current);
+    return segments;
 }
 function stripTomlComment(line) {
     let quote;
@@ -43539,18 +43707,18 @@ function isNodeSpecDeterministic(rawSpec) {
         return isExactVersion(aliasedSpec);
     }
     if (isNodeGitSpec(spec)) {
-        return hasCommitReference(spec);
+        return hasNodeCommitReference(spec);
     }
     if (/^https?:/.test(spec)) {
         return hasContentAddressedUrlReference(spec);
     }
     if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:#[^#]+)?$/.test(spec)) {
-        return hasCommitReference(spec);
-    }
-    if (/^github:[^#]+#[a-f0-9]{40}$/i.test(spec)) {
-        return true;
+        return hasNodeCommitReference(spec);
     }
     return isExactVersion(spec);
+}
+function hasNodeCommitReference(value) {
+    return /#[a-f0-9]{40}$/i.test(value.trim());
 }
 function isNodeRegistryVersionSpec(spec) {
     const trimmed = spec.trim();
@@ -49898,6 +50066,7 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 const constants_1 = __nccwpck_require__(7242);
 const config_1 = __nccwpck_require__(2973);
 const report_1 = __nccwpck_require__(665);
+const remote_1 = __nccwpck_require__(6473);
 const scanner_1 = __nccwpck_require__(4105);
 const rules_1 = __nccwpck_require__(5755);
 async function importCore() {
@@ -49918,8 +50087,8 @@ async function run() {
     const patchInput = (0, config_1.normalizeBooleanInput)(core.getInput('patch'), 'patch', config.patch ?? false);
     const remoteValidationInput = (0, config_1.normalizeBooleanInput)(core.getInput('remote-validation'), 'remote-validation', config.remoteValidation ?? false);
     const remoteTokenPolicyInput = (0, config_1.normalizeRemoteTokenPolicyInput)(core.getInput('remote-token-policy'), config.remoteTokenPolicy ?? 'auto');
-    const remoteValidationTimeoutMsInput = (0, config_1.normalizePositiveIntegerInput)(core.getInput('remote-timeout-ms'), 'remote-timeout-ms', config.remoteValidationTimeoutMs ?? 5000);
-    const remoteValidationRetriesInput = (0, config_1.normalizePositiveIntegerInput)(core.getInput('remote-retries'), 'remote-retries', config.remoteValidationRetries ?? 1);
+    const remoteValidationTimeoutMsInput = (0, config_1.normalizePositiveIntegerInput)(core.getInput('remote-timeout-ms'), 'remote-timeout-ms', config.remoteValidationTimeoutMs ?? remote_1.DEFAULT_TIMEOUT_MS, config_1.MAX_REMOTE_TIMEOUT_MS);
+    const remoteValidationRetriesInput = (0, config_1.normalizePositiveIntegerInput)(core.getInput('remote-retries'), 'remote-retries', config.remoteValidationRetries ?? remote_1.DEFAULT_RETRIES, config_1.MAX_REMOTE_RETRIES);
     for (const diagnostic of [
         ...modeInput.diagnostics,
         ...severityThresholdInput.diagnostics,
