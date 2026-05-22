@@ -64,8 +64,8 @@ ecosystems:
 | `patch`               | Write a unified diff with safe remediation suggestions.                   |
 | `remote-validation`   | Opt in to remote validation of immutable GitHub commit refs.              |
 | `remote-token-policy` | `auto` or `never`; controls remote-validation token forwarding.           |
-| `remote-timeout-ms`   | Per-request remote validation timeout in milliseconds.                    |
-| `remote-retries`      | Retry count for transient remote validation failures.                     |
+| `remote-timeout-ms`   | Per-request remote validation timeout in milliseconds; capped at `60000`. |
+| `remote-retries`      | Retry count for transient remote validation failures; capped at `10`.     |
 | `include`             | Glob patterns to scan.                                                    |
 | `exclude`             | Glob patterns to skip in addition to built-in vendor/build ignores.       |
 | `rules`               | Map of rule id to `true` or `false`.                                      |
@@ -97,7 +97,7 @@ exclude:
 
 ## Validation
 
-Malformed YAML fails the action with a clear parse error because the configured policy cannot be trusted. Invalid individual fields emit warnings and are ignored, so the action falls back to defaults or other valid config entries.
+Malformed YAML fails the action with a clear parse error because the configured policy cannot be trusted. Config files must be regular files under the scan root after symlink resolution and are capped at 1 MiB before parsing. Invalid individual fields emit warnings and are ignored, so the action falls back to defaults or other valid config entries.
 
 Examples that warn and fall back:
 
@@ -117,13 +117,13 @@ when available, otherwise to the action default.
 
 Accepted direct input values:
 
-| Input                                 | Accepted values                             |
-| ------------------------------------- | ------------------------------------------- |
-| `mode`                                | `advisory` or `enforce`                     |
-| `severity-threshold`                  | `low`, `medium`, or `high`                  |
-| `remote-token-policy`                 | `auto` or `never`                           |
-| `sarif`, `patch`, `remote-validation` | `true` or `false`                           |
-| `remote-timeout-ms`, `remote-retries` | Non-negative integers such as `0` or `5000` |
+| Input                                 | Accepted values                                                |
+| ------------------------------------- | -------------------------------------------------------------- |
+| `mode`                                | `advisory` or `enforce`                                        |
+| `severity-threshold`                  | `low`, `medium`, or `high`                                     |
+| `remote-token-policy`                 | `auto` or `never`                                              |
+| `sarif`, `patch`, `remote-validation` | `true` or `false`                                              |
+| `remote-timeout-ms`, `remote-retries` | Non-negative integers; capped at `60000` and `10` respectively |
 
 ## Editor Schema Usage
 
