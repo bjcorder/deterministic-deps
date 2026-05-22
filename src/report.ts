@@ -236,18 +236,29 @@ export function renderPatch(root: string, findings: Finding[]): string {
   const replacements = findings
     .map((finding) => safeReplacement(finding))
     .filter((replacement): replacement is LineReplacement => Boolean(replacement))
-    .filter((replacement) => replacementMatchesFile(root, replacement))
+    .map((replacement) => {
+      const safeFile = normalizeWorkspaceRelativePath(root, replacement.file)
+      if (!safeFile) {
+        return undefined
+      }
+
+      return { replacement, safeFile }
+    })
+    .filter(
+      (value): value is { replacement: LineReplacement; safeFile: string } => Boolean(value)
+    )
+    .filter(({ replacement, safeFile }) => replacementMatchesFile(root, safeFile, replacement))
 
   if (replacements.length === 0) {
     return ''
   }
 
   const lines: string[] = []
-  for (const replacement of replacements) {
+  for (const { replacement, safeFile } of replacements) {
     lines.push(
-      `diff --git a/${replacement.file} b/${replacement.file}`,
-      `--- a/${replacement.file}`,
-      `+++ b/${replacement.file}`,
+      `diff --git a/${safeFile} b/${safeFile}`,
+      `--- a/${safeFile}`,
+      `+++ b/${safeFile}`,
       `@@ -${replacement.line},1 +${replacement.line},1 @@`,
       `-${replacement.oldText}`,
       `+${replacement.newText}`
@@ -278,14 +289,32 @@ function replacementContainsCredentialMaterial(replacement: LineReplacement): bo
   )
 }
 
-function replacementMatchesFile(root: string, replacement: LineReplacement): boolean {
-  const filePath = path.join(root, replacement.file)
+function replacementMatchesFile(
+  root: string,
+  safeFile: string,
+  replacement: LineReplacement
+): boolean {
+  const filePath = path.join(root, safeFile)
   if (!fs.existsSync(filePath)) {
     return false
   }
 
   const line = fs.readFileSync(filePath, 'utf8').split(/\r?\n/)[replacement.line - 1]
   return line === replacement.oldText
+}
+
+function normalizeWorkspaceRelativePath(root: string, file: string): string | undefined {
+  if (/[\x00-\x1f\x7f]/.test(file) || file.length === 0) {
+    return undefined
+  }
+
+  const resolved = path.resolve(root, file)
+  const relative = path.relative(root, resolved)
+  if (relative.length === 0 || relative.startsWith('..') || path.isAbsolute(relative)) {
+    return undefined
+  }
+
+  return relative.split(path.sep).join('/')
 }
 
 function sarifLevel(severity: Severity): 'error' | 'warning' | 'note' {
