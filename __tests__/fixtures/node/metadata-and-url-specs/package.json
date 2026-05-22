@@ -2,6 +2,9 @@
   "dependencies": {
     "alias-range": "npm:leftpad@^1.0.0",
     "floating-github": "octo-org/tool#main",
+    "floating-github-with-sha-suffix": "github:octo-org/tool#main-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "floating-shorthand-with-sha-suffix": "octo-org/tool#release-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "floating-git-url-with-sha-suffix": "git+https://github.com/octo-org/tool.git#branch-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "floating-tarball": "https://example.com/pkg.tgz"
   },
   "overrides": {

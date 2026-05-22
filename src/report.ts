@@ -7,6 +7,10 @@ import { Rule, rules as ruleRegistry } from './rules'
 
 const RULES_HELP_URI = 'https://github.com/bjcorder/deterministic-deps/blob/main/docs/rules.md'
 
+// Stable component of the SARIF fingerprint hash. Changing this value
+// invalidates every previously stored fingerprint, so do not bump it casually.
+export const SARIF_FINGERPRINT_VERSION = 'v1'
+
 export function countBySeverity(findings: Finding[]): Record<Severity, number> {
   return {
     high: findings.filter((finding) => finding.severity === 'high').length,
@@ -218,7 +222,7 @@ function sarifFingerprints(finding: Finding): Record<string, string> {
     primaryLocationLineHash: stableHash(
       [
         'deterministic-deps',
-        'v1',
+        SARIF_FINGERPRINT_VERSION,
         finding.ruleId,
         finding.file,
         finding.line.toString(),

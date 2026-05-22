@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+- Fixed Rust git dependency scanning so per-package dependency subtables and Cargo patch/replace override sections cannot bypass the `rust/git-rev-sha` rule.
+- Bounded opt-in remote validation to 100 unique remote references per scan and report overflow refs as low-severity validation errors instead of silently skipping them.
+
 ## 1.1.0 - 2026-05-13
 
 - Added a GitHub Actions runner-label rule that flags floating hosted labels such as
