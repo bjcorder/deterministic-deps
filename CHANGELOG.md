@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+- Fixed Rust git dependency scanning so per-package dependency subtables and Cargo patch/replace override sections cannot bypass the `rust/git-rev-sha` rule.
+
 ## 1.1.0 - 2026-05-13
 
 - Added a GitHub Actions runner-label rule that flags floating hosted labels such as

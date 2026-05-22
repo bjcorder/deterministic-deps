@@ -56,11 +56,11 @@ Floating hosted runner aliases such as `ubuntu-latest`, `windows-latest`, and `m
 
 ## Rust
 
-| Rule                     | Severity | Behavior                                                                                |
-| ------------------------ | -------- | --------------------------------------------------------------------------------------- |
-| `rust/lockfile-required` | high     | `Cargo.toml` requires `Cargo.lock` for deterministic application/workspace builds.      |
-| `rust/git-rev-sha`       | high     | Git dependencies in dependency tables must include `rev = "<40-character commit SHA>"`. |
-| `rust/toolchain-version` | medium   | Rust toolchain files must not use floating `stable`, `beta`, or `nightly` channels.     |
+| Rule                     | Severity | Behavior                                                                                                                                |
+| ------------------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `rust/lockfile-required` | high     | `Cargo.toml` requires `Cargo.lock` for deterministic application/workspace builds.                                                      |
+| `rust/git-rev-sha`       | high     | Git dependencies in dependency tables, package subtables, and patch/replace overrides must include `rev = "<40-character commit SHA>"`. |
+| `rust/toolchain-version` | medium   | Rust toolchain files must not use floating `stable`, `beta`, or `nightly` channels.                                                     |
 
 The Rust git revision rule can include a safe patch suggestion when a one-line dependency table already has a full commit SHA in the git URL, such as a `?rev=` query, but lacks the explicit Cargo `rev` field.
 
