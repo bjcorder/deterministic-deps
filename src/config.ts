@@ -14,6 +14,8 @@ import {
 export const VALID_SEVERITIES = ['low', 'medium', 'high'] as const
 export const VALID_MODES = ['advisory', 'enforce'] as const
 export const VALID_REMOTE_TOKEN_POLICIES = ['auto', 'never'] as const
+export const MAX_REMOTE_TIMEOUT_MS = 30000
+export const MAX_REMOTE_RETRIES = 5
 export const ECOSYSTEM_OPTIONS: Record<string, string[]> = {
   go: ['requireGoSum'],
   jvm: ['allowDynamicVersionsWithGradleMetadata'],
@@ -156,7 +158,8 @@ export function normalizePositiveInteger(value: string | undefined, fallback: nu
 export function normalizePositiveIntegerInput(
   value: string | undefined,
   key: string,
-  fallback: number
+  fallback: number,
+  max?: number
 ): { value: number; diagnostics: ConfigDiagnostic[] } {
   if (value === undefined || value === '') {
     return { value: fallback, diagnostics: [] }
@@ -175,6 +178,16 @@ export function normalizePositiveIntegerInput(
 
   const parsed = Number.parseInt(value, 10)
   if (Number.isInteger(parsed) && parsed >= 0) {
+    if (max !== undefined && parsed > max) {
+      return {
+        value: max,
+        diagnostics: [
+          {
+            message: `Action input ${key} exceeded maximum ${max}; clamping to ${max}.`
+          }
+        ]
+      }
+    }
     return { value: parsed, diagnostics: [] }
   }
 
@@ -240,8 +253,18 @@ export function loadConfigWithDiagnostics(root: string, configPath: string): Con
       patch: readBoolean(raw, 'patch', diagnostics),
       remoteValidation: readBoolean(raw, 'remote-validation', diagnostics),
       remoteTokenPolicy: readRemoteTokenPolicy(raw, diagnostics),
-      remoteValidationTimeoutMs: readPositiveInteger(raw, 'remote-timeout-ms', diagnostics),
-      remoteValidationRetries: readPositiveInteger(raw, 'remote-retries', diagnostics),
+      remoteValidationTimeoutMs: readPositiveInteger(
+        raw,
+        'remote-timeout-ms',
+        diagnostics,
+        MAX_REMOTE_TIMEOUT_MS
+      ),
+      remoteValidationRetries: readPositiveInteger(
+        raw,
+        'remote-retries',
+        diagnostics,
+        MAX_REMOTE_RETRIES
+      ),
       include: readStringArray(raw, 'include', diagnostics),
       exclude: readStringArray(raw, 'exclude', diagnostics),
       rules: readBooleanRecord(raw, 'rules', diagnostics),
@@ -362,7 +385,8 @@ function readBoolean(
 function readPositiveInteger(
   raw: Record<string, unknown>,
   key: string,
-  diagnostics: ConfigDiagnostic[]
+  diagnostics: ConfigDiagnostic[],
+  max?: number
 ): number | undefined {
   const value = raw[key]
   if (value === undefined) {
@@ -370,6 +394,12 @@ function readPositiveInteger(
   }
 
   if (typeof value === 'number' && Number.isInteger(value) && value >= 0) {
+    if (max !== undefined && value > max) {
+      diagnostics.push({
+        message: `${key} exceeded maximum ${max}; clamping to ${max}.`
+      })
+      return max
+    }
     return value
   }
 

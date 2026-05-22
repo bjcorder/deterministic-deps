@@ -1,6 +1,8 @@
 import { DEFAULT_EXCLUDE, DEFAULT_INCLUDE } from './constants'
 import {
   loadConfigWithDiagnostics,
+  MAX_REMOTE_RETRIES,
+  MAX_REMOTE_TIMEOUT_MS,
   normalizeBooleanInput,
   normalizeModeInput,
   normalizePositiveIntegerInput,
@@ -47,12 +49,14 @@ async function run(): Promise<void> {
   const remoteValidationTimeoutMsInput = normalizePositiveIntegerInput(
     core.getInput('remote-timeout-ms'),
     'remote-timeout-ms',
-    config.remoteValidationTimeoutMs ?? 5000
+    config.remoteValidationTimeoutMs ?? 5000,
+    MAX_REMOTE_TIMEOUT_MS
   )
   const remoteValidationRetriesInput = normalizePositiveIntegerInput(
     core.getInput('remote-retries'),
     'remote-retries',
-    config.remoteValidationRetries ?? 1
+    config.remoteValidationRetries ?? 1,
+    MAX_REMOTE_RETRIES
   )
 
   for (const diagnostic of [

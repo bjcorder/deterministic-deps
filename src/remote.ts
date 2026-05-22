@@ -34,6 +34,7 @@ interface RemoteTokenDecision {
 
 const DEFAULT_TIMEOUT_MS = 5000
 const DEFAULT_RETRIES = 1
+const MAX_REMOTE_REFERENCES = 100
 
 export async function validateRemoteReferences(
   root: string,
@@ -47,8 +48,15 @@ export async function validateRemoteReferences(
   const findings: Finding[] = []
   const apiBaseUrl = githubApiBaseUrl()
   const tokenDecision = githubTokenDecision(apiBaseUrl, config)
+  const diagnostics = [...tokenDecision.diagnostics]
+  const referencesToValidate = references.slice(0, MAX_REMOTE_REFERENCES)
+  if (references.length > MAX_REMOTE_REFERENCES) {
+    diagnostics.push({
+      message: `Remote validation limited to ${MAX_REMOTE_REFERENCES} unique references (from ${references.length}) to protect CI runtime and API quotas.`
+    })
+  }
 
-  for (const reference of references) {
+  for (const reference of referencesToValidate) {
     const key =
       `${reference.host}/${reference.owner}/${reference.repo}@${reference.sha}`.toLowerCase()
     let result = cache.get(key)
@@ -87,7 +95,7 @@ export async function validateRemoteReferences(
     }
   }
 
-  return { findings, diagnostics: tokenDecision.diagnostics }
+  return { findings, diagnostics }
 }
 
 function collectRemoteReferences(root: string, file: string): RemoteReference[] {

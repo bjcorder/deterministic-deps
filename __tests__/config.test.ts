@@ -5,6 +5,8 @@ import Ajv2020 from 'ajv/dist/2020'
 import yaml from 'js-yaml'
 import {
   ECOSYSTEM_OPTIONS,
+  MAX_REMOTE_RETRIES,
+  MAX_REMOTE_TIMEOUT_MS,
   VALID_MODES,
   VALID_REMOTE_TOKEN_POLICIES,
   VALID_SEVERITIES,
@@ -180,6 +182,29 @@ describe('configuration', () => {
     expect(config.remoteValidationRetries).toBe(2)
   })
 
+  it('clamps oversized remote validation values from YAML config', () => {
+    const root = tempRepo()
+    fs.writeFileSync(
+      path.join(root, '.deterministic-deps.yml'),
+      [
+        'remote-timeout-ms: 999999',
+        'remote-retries: 999',
+        ''
+      ].join('\n'),
+      'utf8'
+    )
+
+    const result = loadConfigWithDiagnostics(root, '.deterministic-deps.yml')
+    expect(result.config.remoteValidationTimeoutMs).toBe(MAX_REMOTE_TIMEOUT_MS)
+    expect(result.config.remoteValidationRetries).toBe(MAX_REMOTE_RETRIES)
+    expect(result.diagnostics.map((diagnostic) => diagnostic.message)).toEqual(
+      expect.arrayContaining([
+        `remote-timeout-ms exceeded maximum ${MAX_REMOTE_TIMEOUT_MS}; clamping to ${MAX_REMOTE_TIMEOUT_MS}.`,
+        `remote-retries exceeded maximum ${MAX_REMOTE_RETRIES}; clamping to ${MAX_REMOTE_RETRIES}.`
+      ])
+    )
+  })
+
   it('warns on invalid action inputs and falls back deterministically', () => {
     const diagnostics = [
       ...normalizeModeInput('sometimes', 'enforce').diagnostics,
@@ -245,6 +270,15 @@ describe('configuration', () => {
       value: 'auto',
       diagnostics: []
     })
+    expect(normalizePositiveIntegerInput('999999', 'remote-timeout-ms', 5000, MAX_REMOTE_TIMEOUT_MS))
+      .toEqual({
+        value: MAX_REMOTE_TIMEOUT_MS,
+        diagnostics: [
+          {
+            message: `Action input remote-timeout-ms exceeded maximum ${MAX_REMOTE_TIMEOUT_MS}; clamping to ${MAX_REMOTE_TIMEOUT_MS}.`
+          }
+        ]
+      })
   })
 
   it('publishes a schema that accepts the documented configuration example', () => {

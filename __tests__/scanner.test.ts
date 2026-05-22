@@ -674,6 +674,34 @@ describe('deterministic-deps scanner', () => {
     expect(result.findings[0].message).not.toContain('Error:')
   })
 
+  it('caps remote validation fan-out to protect CI runtime and rate limits', async () => {
+    const root = tempRepo()
+    const fetchMock = jest.fn().mockResolvedValue({ status: 200 })
+    globalThis.fetch = fetchMock
+    const lines = ['steps:']
+    for (let index = 0; index < 120; index += 1) {
+      const sha = index.toString(16).padStart(40, '0')
+      lines.push(`  - uses: actions/checkout@${sha}`)
+    }
+    write(root, '.github/workflows/ci.yml', `${lines.join('\n')}\n`)
+
+    const result = await scan({
+      root,
+      include: [],
+      exclude: [],
+      config: { remoteValidation: true, remoteValidationRetries: 0 }
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(100)
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: 'Remote validation limited to 100 unique references (from 120) to protect CI runtime and API quotas.'
+        })
+      ])
+    )
+  })
+
   it('validates GitHub-hosted git dependency commit refs when enabled', async () => {
     const root = tempRepo()
     const sha = '0123456789abcdef0123456789abcdef01234567'

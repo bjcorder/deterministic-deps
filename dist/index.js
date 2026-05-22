@@ -41044,7 +41044,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.ECOSYSTEM_OPTIONS = exports.VALID_REMOTE_TOKEN_POLICIES = exports.VALID_MODES = exports.VALID_SEVERITIES = void 0;
+exports.ECOSYSTEM_OPTIONS = exports.MAX_REMOTE_RETRIES = exports.MAX_REMOTE_TIMEOUT_MS = exports.VALID_REMOTE_TOKEN_POLICIES = exports.VALID_MODES = exports.VALID_SEVERITIES = void 0;
 exports.splitPatterns = splitPatterns;
 exports.normalizeMode = normalizeMode;
 exports.normalizeModeInput = normalizeModeInput;
@@ -41063,6 +41063,8 @@ const js_yaml_1 = __importDefault(__nccwpck_require__(4281));
 exports.VALID_SEVERITIES = ['low', 'medium', 'high'];
 exports.VALID_MODES = ['advisory', 'enforce'];
 exports.VALID_REMOTE_TOKEN_POLICIES = ['auto', 'never'];
+exports.MAX_REMOTE_TIMEOUT_MS = 30000;
+exports.MAX_REMOTE_RETRIES = 5;
 exports.ECOSYSTEM_OPTIONS = {
     go: ['requireGoSum'],
     jvm: ['allowDynamicVersionsWithGradleMetadata'],
@@ -41168,7 +41170,7 @@ function normalizePositiveInteger(value, fallback) {
     const parsed = Number.parseInt(value, 10);
     return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
 }
-function normalizePositiveIntegerInput(value, key, fallback) {
+function normalizePositiveIntegerInput(value, key, fallback, max) {
     if (value === undefined || value === '') {
         return { value: fallback, diagnostics: [] };
     }
@@ -41184,6 +41186,16 @@ function normalizePositiveIntegerInput(value, key, fallback) {
     }
     const parsed = Number.parseInt(value, 10);
     if (Number.isInteger(parsed) && parsed >= 0) {
+        if (max !== undefined && parsed > max) {
+            return {
+                value: max,
+                diagnostics: [
+                    {
+                        message: `Action input ${key} exceeded maximum ${max}; clamping to ${max}.`
+                    }
+                ]
+            };
+        }
         return { value: parsed, diagnostics: [] };
     }
     return {
@@ -41236,8 +41248,8 @@ function loadConfigWithDiagnostics(root, configPath) {
             patch: readBoolean(raw, 'patch', diagnostics),
             remoteValidation: readBoolean(raw, 'remote-validation', diagnostics),
             remoteTokenPolicy: readRemoteTokenPolicy(raw, diagnostics),
-            remoteValidationTimeoutMs: readPositiveInteger(raw, 'remote-timeout-ms', diagnostics),
-            remoteValidationRetries: readPositiveInteger(raw, 'remote-retries', diagnostics),
+            remoteValidationTimeoutMs: readPositiveInteger(raw, 'remote-timeout-ms', diagnostics, exports.MAX_REMOTE_TIMEOUT_MS),
+            remoteValidationRetries: readPositiveInteger(raw, 'remote-retries', diagnostics, exports.MAX_REMOTE_RETRIES),
             include: readStringArray(raw, 'include', diagnostics),
             exclude: readStringArray(raw, 'exclude', diagnostics),
             rules: readBooleanRecord(raw, 'rules', diagnostics),
@@ -41321,12 +41333,18 @@ function readBoolean(raw, key, diagnostics) {
     });
     return undefined;
 }
-function readPositiveInteger(raw, key, diagnostics) {
+function readPositiveInteger(raw, key, diagnostics, max) {
     const value = raw[key];
     if (value === undefined) {
         return undefined;
     }
     if (typeof value === 'number' && Number.isInteger(value) && value >= 0) {
+        if (max !== undefined && value > max) {
+            diagnostics.push({
+                message: `${key} exceeded maximum ${max}; clamping to ${max}.`
+            });
+            return max;
+        }
         return value;
     }
     diagnostics.push({
@@ -41638,13 +41656,21 @@ const constants_1 = __nccwpck_require__(7242);
 const redaction_1 = __nccwpck_require__(1066);
 const DEFAULT_TIMEOUT_MS = 5000;
 const DEFAULT_RETRIES = 1;
+const MAX_REMOTE_REFERENCES = 100;
 async function validateRemoteReferences(root, files, config) {
     const references = dedupeRemoteReferences(files.flatMap((file) => collectRemoteReferences(root, file)));
     const cache = new Map();
     const findings = [];
     const apiBaseUrl = githubApiBaseUrl();
     const tokenDecision = githubTokenDecision(apiBaseUrl, config);
-    for (const reference of references) {
+    const diagnostics = [...tokenDecision.diagnostics];
+    const referencesToValidate = references.slice(0, MAX_REMOTE_REFERENCES);
+    if (references.length > MAX_REMOTE_REFERENCES) {
+        diagnostics.push({
+            message: `Remote validation limited to ${MAX_REMOTE_REFERENCES} unique references (from ${references.length}) to protect CI runtime and API quotas.`
+        });
+    }
+    for (const reference of referencesToValidate) {
         const key = `${reference.host}/${reference.owner}/${reference.repo}@${reference.sha}`.toLowerCase();
         let result = cache.get(key);
         if (!result) {
@@ -41658,7 +41684,7 @@ async function validateRemoteReferences(root, files, config) {
             findings.push(remoteFinding('remote/validation-error', reference, 'low', `Remote validation for '${reference.owner}/${reference.repo}@${reference.sha}' could not complete: ${result.message}.`, 'Retry later, adjust remote validation timeout/retry settings, or disable remote validation for offline/static-only runs.'));
         }
     }
-    return { findings, diagnostics: tokenDecision.diagnostics };
+    return { findings, diagnostics };
 }
 function collectRemoteReferences(root, file) {
     const absolutePath = node_path_1.default.join(root, file);
@@ -49918,8 +49944,8 @@ async function run() {
     const patchInput = (0, config_1.normalizeBooleanInput)(core.getInput('patch'), 'patch', config.patch ?? false);
     const remoteValidationInput = (0, config_1.normalizeBooleanInput)(core.getInput('remote-validation'), 'remote-validation', config.remoteValidation ?? false);
     const remoteTokenPolicyInput = (0, config_1.normalizeRemoteTokenPolicyInput)(core.getInput('remote-token-policy'), config.remoteTokenPolicy ?? 'auto');
-    const remoteValidationTimeoutMsInput = (0, config_1.normalizePositiveIntegerInput)(core.getInput('remote-timeout-ms'), 'remote-timeout-ms', config.remoteValidationTimeoutMs ?? 5000);
-    const remoteValidationRetriesInput = (0, config_1.normalizePositiveIntegerInput)(core.getInput('remote-retries'), 'remote-retries', config.remoteValidationRetries ?? 1);
+    const remoteValidationTimeoutMsInput = (0, config_1.normalizePositiveIntegerInput)(core.getInput('remote-timeout-ms'), 'remote-timeout-ms', config.remoteValidationTimeoutMs ?? 5000, config_1.MAX_REMOTE_TIMEOUT_MS);
+    const remoteValidationRetriesInput = (0, config_1.normalizePositiveIntegerInput)(core.getInput('remote-retries'), 'remote-retries', config.remoteValidationRetries ?? 1, config_1.MAX_REMOTE_RETRIES);
     for (const diagnostic of [
         ...modeInput.diagnostics,
         ...severityThresholdInput.diagnostics,
