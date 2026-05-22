@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { glob } from 'glob'
+import { glob } from 'osl-glob'
 import { DEFAULT_EXCLUDE, DEFAULT_INCLUDE } from './constants'
 import { existingAncestorRealpathStaysInsideRoot, normalizeWorkspaceRelativePath } from './paths'
 import { validateRemoteReferences } from './remote'
