@@ -33,8 +33,10 @@ describe('deterministic-deps scanner', () => {
     const outside = tempRepo()
     fs.symlinkSync(outside, path.join(workspace, 'outside-link'), 'dir')
 
-    expect(resolveScanRoot(workspace, '.')).toBe(workspace)
-    expect(resolveScanRoot(workspace, 'nested')).toBe(path.join(workspace, 'nested'))
+    expect(resolveScanRoot(workspace, '.')).toBe(fs.realpathSync(workspace))
+    expect(resolveScanRoot(workspace, 'nested')).toBe(
+      fs.realpathSync(path.join(workspace, 'nested'))
+    )
     expect(() => resolveScanRoot(workspace, '..')).toThrow(
       'Scan path must resolve inside GITHUB_WORKSPACE'
     )

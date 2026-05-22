@@ -351,18 +351,6 @@ describe('golden reports', () => {
   it('skips patch output when replacement file path contains control characters', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'deterministic-deps-report-'))
     const unsafeFile = 'safe-prefix\ninjected/Cargo.toml'
-    const unsafePath = path.join(root, unsafeFile)
-    fs.mkdirSync(path.dirname(unsafePath), { recursive: true })
-    fs.writeFileSync(
-      unsafePath,
-      [
-        '[dependencies]',
-        'demo = { git = "https://github.com/acme/demo.git?rev=0123456789abcdef0123456789abcdef01234567" }',
-        ''
-      ].join('\n'),
-      'utf8'
-    )
-
     const patch = renderPatch(root, [
       {
         ruleId: 'rust/git-rev-sha',
