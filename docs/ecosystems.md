@@ -24,7 +24,7 @@ Python requirements files are parsed into logical entries before evaluation, inc
 
 Go module files are parsed by directive, including single-line and block `require`, `replace`, and `exclude` forms. Comments are ignored, and git replacements pass when they use a full commit reference or Go pseudo-version.
 
-Rust manifests are parsed by dependency table, including package, workspace, build, dev, and target dependency sections. Comments and unrelated strings are ignored, and git dependencies must include a full `rev` commit SHA rather than only a branch or tag. Rust toolchain files are scanned for floating channels; use exact versions or dated nightly channels for deterministic compiler selection.
+Rust manifests are parsed by dependency table, including package, workspace, build, dev, target dependency sections, per-package dependency subtables, and patch/replace override sections. Comments and unrelated strings are ignored, and git dependencies must include a full `rev` commit SHA rather than only a branch or tag. Rust toolchain files are scanned for floating channels; use exact versions or dated nightly channels for deterministic compiler selection.
 
 Gemfiles are parsed as logical `gem` declarations, including grouped and multi-line declarations. Comments and unrelated strings are ignored, and git dependencies must use a full `ref` commit SHA rather than branch or tag options alone.
 
