@@ -1,6 +1,8 @@
+import fs from 'node:fs'
 import path from 'node:path'
 import { glob } from 'glob'
 import { DEFAULT_EXCLUDE, DEFAULT_INCLUDE } from './constants'
+import { existingAncestorRealpathStaysInsideRoot, normalizeWorkspaceRelativePath } from './paths'
 import { validateRemoteReferences } from './remote'
 import { evaluateFile, finalizeFindings } from './rules'
 import { Config, ScanOptions, ScanResult } from './types'
@@ -43,13 +45,27 @@ export async function discoverFiles(
     windowsPathsNoEscape: true
   })
 
-  return Array.from(new Set(files.map((file) => normalizePath(file)))).sort()
+  return Array.from(
+    new Set(
+      files
+        .map((file) => normalizeWorkspaceRelativePath(root, file))
+        .filter((file): file is string => Boolean(file))
+    )
+  ).sort()
 }
 
 export function resolveScanRoot(workspace: string, requestedPath: string): string {
-  return path.resolve(workspace, requestedPath || '.')
-}
+  const resolvedWorkspace = path.resolve(workspace)
+  const resolved = path.resolve(resolvedWorkspace, requestedPath || '.')
+  const relative = path.relative(resolvedWorkspace, resolved)
+  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error(`Scan path must resolve inside GITHUB_WORKSPACE: ${requestedPath || '.'}`)
+  }
 
-function normalizePath(file: string): string {
-  return file.split(path.sep).join('/')
+  if (!existingAncestorRealpathStaysInsideRoot(resolvedWorkspace, resolved)) {
+    throw new Error(`Scan path must resolve inside GITHUB_WORKSPACE: ${requestedPath || '.'}`)
+  }
+
+  fs.mkdirSync(resolved, { recursive: true })
+  return fs.realpathSync(resolved)
 }

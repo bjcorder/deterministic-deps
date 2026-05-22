@@ -1,4 +1,19 @@
-# deterministic-deps
+<p align="center">
+  <img src="docs/assets/deterministic-deps-banner.svg" alt="deterministic-deps" width="640">
+</p>
+
+<p align="center"><strong>Static dependency determinism scanning for GitHub Actions, containers, IaC, and package manifests.</strong></p>
+
+<p align="center">
+  <a href="https://github.com/Ozark-Security-Labs/deterministic-deps/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Ozark-Security-Labs/deterministic-deps/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/Ozark-Security-Labs/deterministic-deps/actions/workflows/security-hygiene.yml"><img alt="Security hygiene" src="https://github.com/Ozark-Security-Labs/deterministic-deps/actions/workflows/security-hygiene.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/Ozark-Security-Labs/deterministic-deps/actions/workflows/codeql.yml"><img alt="CodeQL" src="https://github.com/Ozark-Security-Labs/deterministic-deps/actions/workflows/codeql.yml/badge.svg?branch=main"></a>
+  <a href="LICENSE"><img alt="License: AGPL-3.0-only" src="https://img.shields.io/badge/license-AGPL--3.0--only-blue.svg"></a>
+  <img alt="Node 24+" src="https://img.shields.io/badge/node-24%2B-5FA04E.svg">
+  <a href="https://github.com/Ozark-Security-Labs/deterministic-deps/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/Ozark-Security-Labs/deterministic-deps?sort=semver&display_name=tag"></a>
+</p>
+
+---
 
 `deterministic-deps` is a GitHub Action that reports dependency declarations that can drift over time. It is language-agnostic, works by static analysis only, and favors SHA, digest, hash, exact-version, and lockfile based determinism.
 
@@ -35,7 +50,7 @@ before pinning a validated version.
 To fail builds once findings are actionable:
 
 ```yaml
-- uses: Ozark-Security-Labs/deterministic-deps@v1
+- uses: Ozark-Security-Labs/deterministic-deps@<full-length-commit-sha>
   with:
     mode: enforce
     severity-threshold: medium
@@ -92,7 +107,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - id: deterministic-deps
-        uses: Ozark-Security-Labs/deterministic-deps@v1
+        uses: Ozark-Security-Labs/deterministic-deps@<full-length-commit-sha>
         continue-on-error: true
         with:
           mode: enforce
@@ -109,7 +124,7 @@ jobs:
 ```
 
 The Marketplace entrypoint is `Ozark-Security-Labs/deterministic-deps@v1`. For workflows that
-enforce policy, pin to the full commit SHA for the validated release behind `v1`. See
+enforce policy, pin to a full commit SHA for the validated release. See
 [docs/sarif.md](docs/sarif.md) for permissions, private repository notes, SARIF upload, and report
 path details.
 
@@ -127,14 +142,15 @@ path details.
 | `patch`               | `false`                    | Write a unified diff with safe remediation suggestions.                         |
 | `remote-validation`   | `false`                    | Opt in to remote validation of immutable GitHub commit references.              |
 | `remote-token-policy` | `auto`                     | Controls whether `GITHUB_TOKEN` may be sent during remote validation.           |
-| `remote-timeout-ms`   | `5000`                     | Per-request timeout for remote validation.                                      |
-| `remote-retries`      | `1`                        | Retry count for transient remote validation failures.                           |
+| `remote-timeout-ms`   | `5000`                     | Per-request timeout for remote validation; capped at `60000`.                   |
+| `remote-retries`      | `1`                        | Retry count for transient remote validation failures; capped at `10`.           |
 
 Invalid direct inputs emit GitHub Actions warnings and fall back deterministically to the matching
 config value when one exists, or to the default above. Accepted values are `advisory` or `enforce`
 for `mode`; `low`, `medium`, or `high` for `severity-threshold`; `auto` or `never` for
 `remote-token-policy`; `true` or `false` for boolean inputs; and non-negative integers for remote
-timeout and retry inputs.
+timeout and retry inputs. Timeout values above `60000` and retry values above `10` are clamped with
+warnings.
 
 ## Outputs
 
@@ -173,7 +189,9 @@ GitHub.com and GitHub Enterprise Server from GitHub Actions runners. Outside Git
 defaults to `https://api.github.com` and `https://github.com`.
 
 Remote validation may reveal repository names and commit SHAs to the configured GitHub server, can
-be affected by API rate limits, and may be slower than static analysis. Public refs can be validated
+be affected by API rate limits, and may be slower than static analysis. To protect CI runtime and API
+quotas, each scan validates at most 100 unique remote references; additional refs produce low-severity
+`remote/validation-error` findings instead of being silently skipped. Public refs can be validated
 without credentials. When `GITHUB_TOKEN` is present, the default `remote-token-policy: auto` sends it
 only to trusted HTTPS GitHub API hosts: `https://api.github.com` for GitHub.com, or a host matching
 `GITHUB_SERVER_URL` for GitHub Enterprise Server. Mismatched, arbitrary, or non-HTTPS API URLs omit

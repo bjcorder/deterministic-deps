@@ -3,7 +3,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach } from '@jest/globals'
 import { renderMarkdown, renderPatch, renderSarif } from '../src/report'
-import { scan } from '../src/scanner'
+import { MAX_REMOTE_REFERENCES } from '../src/remote'
+import { resolveScanRoot, scan } from '../src/scanner'
 import { shouldReportFailure } from '../src/rules'
 import { Finding } from '../src/types'
 
@@ -25,6 +26,49 @@ describe('deterministic-deps scanner', () => {
     delete process.env.GITHUB_TOKEN
     delete process.env.GITHUB_API_URL
     delete process.env.GITHUB_SERVER_URL
+  })
+
+  it('keeps the scan root inside the workspace', () => {
+    const workspace = tempRepo()
+    const outside = tempRepo()
+    fs.symlinkSync(outside, path.join(workspace, 'outside-link'), 'dir')
+
+    expect(resolveScanRoot(workspace, '.')).toBe(fs.realpathSync(workspace))
+    expect(resolveScanRoot(workspace, 'nested')).toBe(
+      fs.realpathSync(path.join(workspace, 'nested'))
+    )
+    expect(() => resolveScanRoot(workspace, '..')).toThrow(
+      'Scan path must resolve inside GITHUB_WORKSPACE'
+    )
+    expect(() => resolveScanRoot(workspace, 'outside-link')).toThrow(
+      'Scan path must resolve inside GITHUB_WORKSPACE'
+    )
+    expect(() => resolveScanRoot(workspace, 'outside-link/newdir')).toThrow(
+      'Scan path must resolve inside GITHUB_WORKSPACE'
+    )
+    expect(fs.existsSync(path.join(outside, 'newdir'))).toBe(false)
+  })
+
+  it('ignores include patterns that resolve outside the scan root', async () => {
+    const parent = tempRepo()
+    const root = path.join(parent, 'repo')
+    fs.mkdirSync(root)
+    write(
+      parent,
+      'outside/package.json',
+      JSON.stringify({ dependencies: { leftpad: '^1.0.0' } }, null, 2)
+    )
+    fs.symlinkSync(path.join(parent, 'outside'), path.join(root, 'outside-link'), 'dir')
+
+    const result = await scan({
+      root,
+      include: ['../outside/package.json', 'outside-link/package.json'],
+      exclude: [],
+      config: {}
+    })
+
+    expect(result.scannedFiles).toEqual([])
+    expect(result.findings).toEqual([])
   })
 
   it('flags broad non-deterministic dependency declarations', async () => {
@@ -672,6 +716,118 @@ describe('deterministic-deps scanner', () => {
     ])
     expect(result.findings[0].message).toContain('socket failed')
     expect(result.findings[0].message).not.toContain('Error:')
+  })
+
+  it('caps remote validation fan-out without silently skipping overflow refs', async () => {
+    const root = tempRepo()
+    const fetchMock = jest.fn().mockResolvedValue({ status: 200 })
+    globalThis.fetch = fetchMock
+    const totalReferences = MAX_REMOTE_REFERENCES + 20
+    const lines = ['steps:']
+    for (let index = 0; index < totalReferences; index += 1) {
+      const sha = index.toString(16).padStart(40, '0')
+      lines.push(`  - uses: actions/checkout@${sha}`)
+    }
+    write(root, '.github/workflows/ci.yml', `${lines.join('\n')}\n`)
+
+    const result = await scan({
+      root,
+      include: [],
+      exclude: [],
+      config: { remoteValidation: true, remoteValidationRetries: 0 }
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(MAX_REMOTE_REFERENCES)
+    expect(result.findings).toHaveLength(20)
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          ruleId: 'remote/validation-error',
+          ecosystem: 'remote',
+          severity: 'low',
+          message: expect.stringContaining(
+            'was skipped because the scan reached the 100 unique remote reference limit'
+          )
+        })
+      ])
+    )
+    expect(shouldReportFailure(result.findings, 'low')).toBe(true)
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message:
+            'Remote validation limited to 100 unique remote references (from 120) to protect CI runtime and API quotas.'
+        })
+      ])
+    )
+  })
+
+  it('does not count duplicate remote references against the fan-out cap', async () => {
+    const root = tempRepo()
+    const fetchMock = jest.fn().mockResolvedValue({ status: 200 })
+    globalThis.fetch = fetchMock
+    const lines = ['steps:']
+    for (let index = 0; index < MAX_REMOTE_REFERENCES; index += 1) {
+      const sha = index.toString(16).padStart(40, '0')
+      lines.push(`  - uses: actions/checkout@${sha}`)
+    }
+    lines.push('  - uses: actions/checkout@0000000000000000000000000000000000000000')
+    write(root, '.github/workflows/ci.yml', `${lines.join('\n')}\n`)
+
+    const result = await scan({
+      root,
+      include: [],
+      exclude: [],
+      config: { remoteValidation: true, remoteValidationRetries: 0 }
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(MAX_REMOTE_REFERENCES)
+    expect(result.findings).toEqual([])
+    expect(result.diagnostics).toEqual([])
+  })
+
+  it('deduplicates overflow findings for repeated remote references', async () => {
+    const root = tempRepo()
+    const fetchMock = jest.fn().mockResolvedValue({ status: 200 })
+    globalThis.fetch = fetchMock
+    const lines = ['steps:']
+    for (let index = 0; index < MAX_REMOTE_REFERENCES; index += 1) {
+      const sha = index.toString(16).padStart(40, '0')
+      lines.push(`  - uses: actions/checkout@${sha}`)
+    }
+    const overflowSha = MAX_REMOTE_REFERENCES.toString(16).padStart(40, '0')
+    for (let index = 0; index < 20; index += 1) {
+      lines.push(`  - uses: actions/checkout@${overflowSha}`)
+    }
+    write(root, '.github/workflows/ci.yml', `${lines.join('\n')}\n`)
+
+    const result = await scan({
+      root,
+      include: [],
+      exclude: [],
+      config: { remoteValidation: true, remoteValidationRetries: 0 }
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(MAX_REMOTE_REFERENCES)
+    expect(result.findings).toHaveLength(1)
+    expect(result.findings[0]).toEqual(
+      expect.objectContaining({
+        ruleId: 'remote/validation-error',
+        ecosystem: 'remote',
+        severity: 'low',
+        message: expect.stringContaining(
+          'was skipped because the scan reached the 100 unique remote reference limit'
+        )
+      })
+    )
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message:
+            'Remote validation limited to 100 unique remote references (from 101) to protect CI runtime and API quotas.'
+        })
+      ])
+    )
   })
 
   it('validates GitHub-hosted git dependency commit refs when enabled', async () => {

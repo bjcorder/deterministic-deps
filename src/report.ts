@@ -1,11 +1,20 @@
 import fs from 'node:fs'
 import crypto from 'node:crypto'
 import path from 'node:path'
+import {
+  existingAncestorRealpathStaysInsideRoot,
+  normalizeWorkspaceRelativePath,
+  isSafeWorkspaceRelativePath
+} from './paths'
 import { containsCredentialMaterial, sanitizeDisplayValue } from './redaction'
 import { Finding, LineReplacement, ReportResult, Severity } from './types'
 import { Rule, rules as ruleRegistry } from './rules'
 
 const RULES_HELP_URI = 'https://github.com/bjcorder/deterministic-deps/blob/main/docs/rules.md'
+
+// Stable component of the SARIF fingerprint hash. Changing this value
+// invalidates every previously stored fingerprint, so do not bump it casually.
+export const SARIF_FINGERPRINT_VERSION = 'v1'
 
 export function countBySeverity(findings: Finding[]): Record<Severity, number> {
   return {
@@ -22,6 +31,9 @@ export function writeReports(
   writePatch = false
 ): ReportResult {
   const outputDir = path.join(root, 'deterministic-deps-report')
+  if (!existingAncestorRealpathStaysInsideRoot(root, outputDir)) {
+    throw new Error('Report output directory must resolve inside the scan root.')
+  }
   fs.mkdirSync(outputDir, { recursive: true })
 
   const markdownPath = path.join(outputDir, 'report.md')
@@ -64,7 +76,7 @@ export function renderMarkdown(findings: Finding[]): string {
   lines.push('| --- | --- | --- | --- | --- | --- |')
   for (const finding of findings) {
     lines.push(
-      `| ${finding.severity} | ${finding.ruleId} | ${finding.ecosystem} | ${finding.file}:${finding.line} | ${escapeMarkdown(sanitizeDisplayValue(finding.message))} | ${escapeMarkdown(sanitizeDisplayValue(finding.remediation))} |`
+      `| ${finding.severity} | ${finding.ruleId} | ${finding.ecosystem} | ${escapeMarkdown(sanitizeDisplayValue(finding.file))}:${finding.line} | ${escapeMarkdown(sanitizeDisplayValue(finding.message))} | ${escapeMarkdown(sanitizeDisplayValue(finding.remediation))} |`
     )
   }
 
@@ -78,7 +90,7 @@ export function renderMarkdown(findings: Finding[]): string {
       }
       const replacement = safeReplacement(finding)
       lines.push(
-        `- ${finding.file}:${finding.line} ${escapeMarkdown(sanitizeDisplayValue(suggestion.title))} (confidence: ${suggestion.confidence}; safe patch: ${replacement ? 'yes' : 'no'})`
+        `- ${escapeMarkdown(sanitizeDisplayValue(finding.file))}:${finding.line} ${escapeMarkdown(sanitizeDisplayValue(suggestion.title))} (confidence: ${suggestion.confidence}; safe patch: ${replacement ? 'yes' : 'no'})`
       )
       if (replacement) {
         lines.push(
@@ -136,7 +148,12 @@ export function renderSarif(findings: Finding[]): object {
           }
 
           const replacement = safeReplacement(finding)
-          if (replacement) {
+          if (
+            replacement &&
+            finding.file === replacement.file &&
+            finding.line === replacement.line &&
+            replacement.oldText.length > 0
+          ) {
             result.fixes = [
               {
                 description: {
@@ -218,7 +235,7 @@ function sarifFingerprints(finding: Finding): Record<string, string> {
     primaryLocationLineHash: stableHash(
       [
         'deterministic-deps',
-        'v1',
+        SARIF_FINGERPRINT_VERSION,
         finding.ruleId,
         finding.file,
         finding.line.toString(),
@@ -236,18 +253,27 @@ export function renderPatch(root: string, findings: Finding[]): string {
   const replacements = findings
     .map((finding) => safeReplacement(finding))
     .filter((replacement): replacement is LineReplacement => Boolean(replacement))
-    .filter((replacement) => replacementMatchesFile(root, replacement))
+    .map((replacement) => {
+      const safeFile = normalizeWorkspaceRelativePath(root, replacement.file)
+      if (!safeFile) {
+        return undefined
+      }
+
+      return { replacement, safeFile }
+    })
+    .filter((value): value is { replacement: LineReplacement; safeFile: string } => Boolean(value))
+    .filter(({ replacement, safeFile }) => replacementMatchesFile(root, safeFile, replacement))
 
   if (replacements.length === 0) {
     return ''
   }
 
   const lines: string[] = []
-  for (const replacement of replacements) {
+  for (const { replacement, safeFile } of replacements) {
     lines.push(
-      `diff --git a/${replacement.file} b/${replacement.file}`,
-      `--- a/${replacement.file}`,
-      `+++ b/${replacement.file}`,
+      `diff --git a/${safeFile} b/${safeFile}`,
+      `--- a/${safeFile}`,
+      `+++ b/${safeFile}`,
       `@@ -${replacement.line},1 +${replacement.line},1 @@`,
       `-${replacement.oldText}`,
       `+${replacement.newText}`
@@ -264,7 +290,11 @@ function safeReplacement(finding: Finding): LineReplacement | undefined {
     return undefined
   }
 
-  if (replacementContainsCredentialMaterial(suggestion.replacement)) {
+  if (
+    !isSafeWorkspaceRelativePath(suggestion.replacement.file) ||
+    replacementContainsUnsafeLineText(suggestion.replacement) ||
+    replacementContainsCredentialMaterial(suggestion.replacement)
+  ) {
     return undefined
   }
 
@@ -278,8 +308,16 @@ function replacementContainsCredentialMaterial(replacement: LineReplacement): bo
   )
 }
 
-function replacementMatchesFile(root: string, replacement: LineReplacement): boolean {
-  const filePath = path.join(root, replacement.file)
+function replacementContainsUnsafeLineText(replacement: LineReplacement): boolean {
+  return /[\r\n]/.test(replacement.oldText) || /[\r\n]/.test(replacement.newText)
+}
+
+function replacementMatchesFile(
+  root: string,
+  safeFile: string,
+  replacement: LineReplacement
+): boolean {
+  const filePath = path.join(root, safeFile)
   if (!fs.existsSync(filePath)) {
     return false
   }
@@ -299,5 +337,5 @@ function sarifLevel(severity: Severity): 'error' | 'warning' | 'note' {
 }
 
 function escapeMarkdown(value: string): string {
-  return value.replaceAll('|', '\\|').replaceAll('\n', ' ')
+  return value.replaceAll('|', '\\|').replaceAll('`', '\\`').replaceAll('\n', ' ')
 }

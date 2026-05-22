@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 200" role="img" aria-label="deterministic-deps">
+  <title>deterministic-deps</title>
+  <desc>deterministic-deps: static dependency determinism scanner</desc>
+  <rect width="720" height="200" rx="12" fill="#0b1220"/>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+    <text x="48" y="104" font-size="52" font-weight="700" fill="#e2e8f0">deterministic</text>
+    <text x="454" y="104" font-size="52" font-weight="700" fill="#38bdf8">-deps</text>
+    <text x="48" y="148" font-size="18" fill="#94a3b8">static dependency determinism scanner</text>
+  </g>
+  <g transform="translate(646, 54)">
+    <circle r="10" fill="#22c55e"/>
+    <path d="M-4 0l3 3 6-7" fill="none" stroke="#0b1220" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle r="10" cy="36" fill="#38bdf8"/>
+    <path d="M0 28v16M-6 36h12" fill="none" stroke="#0b1220" stroke-width="2.5" stroke-linecap="round"/>
+    <circle r="10" cy="72" fill="#f59e0b"/>
+    <path d="M-4 72h8M0 68v8" fill="none" stroke="#0b1220" stroke-width="2.5" stroke-linecap="round"/>
+  </g>
+</svg>

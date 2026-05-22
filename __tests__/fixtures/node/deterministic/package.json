@@ -1,5 +1,8 @@
 {
   "dependencies": {
-    "leftpad": "1.0.0"
+    "leftpad": "1.0.0",
+    "commit-github": "github:octo-org/tool#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "commit-shorthand": "octo-org/tool#bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "commit-git-url": "git+https://github.com/octo-org/tool.git#cccccccccccccccccccccccccccccccccccccccc"
   }
 }

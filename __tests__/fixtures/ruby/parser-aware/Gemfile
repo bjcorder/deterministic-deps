@@ -16,9 +16,11 @@ gem 'braced', {
 gem 'continued', \
   git: 'https://github.com/acme/continued.git',
   branch: 'main'
+gem 'hash_rocket', :git => 'https://github.com/acme/hash-rocket.git', :branch => 'main'
 gem 'pinned',
   git: 'https://github.com/acme/pinned.git',
   ref: '0123456789abcdef0123456789abcdef01234567'
+gem 'hash_rocket_pinned', :git => 'https://github.com/acme/hash-rocket-pinned.git', :ref => '0123456789abcdef0123456789abcdef01234567'
 
 group :development do
   gem 'grouped', git: 'https://github.com/acme/grouped.git', branch: 'main'
