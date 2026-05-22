@@ -34,3 +34,11 @@ patch-pinned = { git = "https://github.com/acme/patch-pinned.git", rev = "012345
 [replace]
 "replace-floating:0.1.0" = { git = "https://github.com/acme/replace-floating.git", branch = "main" }
 "replace-pinned:0.1.0" = { git = "https://github.com/acme/replace-pinned.git", rev = "0123456789abcdef0123456789abcdef01234567" }
+
+[patch."https://github.com/acme/source"]
+quoted-source-pinned = { git = "https://github.com/acme/quoted-source-pinned.git", rev = "0123456789abcdef0123456789abcdef01234567" }
+quoted-source-floating = { git = "https://github.com/acme/quoted-source-floating.git", branch = "main" }
+
+[patch."https://github.com/acme/source".quoted-subtable-floating]
+git = "https://github.com/acme/quoted-subtable-floating.git"
+branch = "main"

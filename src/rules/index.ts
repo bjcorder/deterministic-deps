@@ -1400,28 +1400,102 @@ function rustRevSuggestion(
 }
 
 function isRustDependencySection(section: string): boolean {
+  const path = splitTomlDottedPath(section)
+  if (!path) {
+    return false
+  }
+
   return (
-    section === 'dependencies' ||
-    section === 'dev-dependencies' ||
-    section === 'build-dependencies' ||
-    section === 'workspace.dependencies' ||
-    /^target\..+\.(?:dependencies|dev-dependencies|build-dependencies)$/.test(section) ||
-    /^patch\..+$/.test(section) ||
-    section === 'replace'
+    isRustDependencyRoot(path[0]) ||
+    (path[0] === 'workspace' && path[1] === 'dependencies' && path.length === 2) ||
+    (path[0] === 'target' && path.length >= 3 && isRustDependencyRoot(path[path.length - 1])) ||
+    (path[0] === 'patch' && path.length === 2) ||
+    (path[0] === 'replace' && path.length === 1)
   )
 }
 
 function isRustDependencySubtable(section: string): boolean {
+  const path = splitTomlDottedPath(section)
+  if (!path) {
+    return false
+  }
+
   return (
-    /^(?:dependencies|dev-dependencies|build-dependencies)\..+$/.test(section) ||
-    /^workspace\.dependencies\..+$/.test(section) ||
-    /^target\..+\.(?:dependencies|dev-dependencies|build-dependencies)\..+$/.test(section) ||
-    /^patch\..+\..+$/.test(section)
+    (isRustDependencyRoot(path[0]) && path.length >= 2) ||
+    (path[0] === 'workspace' && path[1] === 'dependencies' && path.length >= 3) ||
+    (path[0] === 'target' && path.length >= 4 && isRustDependencyRoot(path[path.length - 2])) ||
+    (path[0] === 'patch' && path.length >= 3)
+  )
+}
+
+function isRustDependencyRoot(segment: string | undefined): boolean {
+  return (
+    segment === 'dependencies' || segment === 'dev-dependencies' || segment === 'build-dependencies'
   )
 }
 
 function rustDependencySubtableName(section: string): string {
-  return section.slice(section.lastIndexOf('.') + 1)
+  const path = splitTomlDottedPath(section)
+  return path?.[path.length - 1] ?? section.slice(section.lastIndexOf('.') + 1)
+}
+
+function splitTomlDottedPath(section: string): string[] | undefined {
+  const segments: string[] = []
+  let current = ''
+  let quote: '"' | "'" | undefined
+  let escaped = false
+
+  for (let index = 0; index < section.length; index += 1) {
+    const character = section[index]
+
+    if (quote) {
+      if (escaped) {
+        current += character
+        escaped = false
+        continue
+      }
+
+      if (quote === '"' && character === '\\') {
+        escaped = true
+        continue
+      }
+
+      if (character === quote) {
+        quote = undefined
+        continue
+      }
+
+      current += character
+      continue
+    }
+
+    if (character === '"' || character === "'") {
+      quote = character
+      continue
+    }
+
+    if (character === '.') {
+      if (!current) {
+        return undefined
+      }
+      segments.push(current)
+      current = ''
+      continue
+    }
+
+    if (/\s/.test(character)) {
+      continue
+    }
+
+    current += character
+  }
+
+  if (quote || escaped || !current) {
+    return undefined
+  }
+
+  segments.push(current)
+  return segments
 }
 
 function stripTomlComment(line: string): string {

@@ -47,5 +47,19 @@
     "file": "Cargo.toml",
     "line": 35,
     "severity": "high"
+  },
+  {
+    "ruleId": "rust/git-rev-sha",
+    "ecosystem": "rust",
+    "file": "Cargo.toml",
+    "line": 40,
+    "severity": "high"
+  },
+  {
+    "ruleId": "rust/git-rev-sha",
+    "ecosystem": "rust",
+    "file": "Cargo.toml",
+    "line": 43,
+    "severity": "high"
   }
 ]
