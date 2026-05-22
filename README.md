@@ -189,7 +189,9 @@ GitHub.com and GitHub Enterprise Server from GitHub Actions runners. Outside Git
 defaults to `https://api.github.com` and `https://github.com`.
 
 Remote validation may reveal repository names and commit SHAs to the configured GitHub server, can
-be affected by API rate limits, and may be slower than static analysis. Public refs can be validated
+be affected by API rate limits, and may be slower than static analysis. To protect CI runtime and API
+quotas, each scan validates at most 100 unique remote references; additional refs produce low-severity
+`remote/validation-error` findings instead of being silently skipped. Public refs can be validated
 without credentials. When `GITHUB_TOKEN` is present, the default `remote-token-policy: auto` sends it
 only to trusted HTTPS GitHub API hosts: `https://api.github.com` for GitHub.com, or a host matching
 `GITHUB_SERVER_URL` for GitHub Enterprise Server. Mismatched, arbitrary, or non-HTTPS API URLs omit

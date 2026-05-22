@@ -41693,7 +41693,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.REMOTE_BACKOFF_BASE_MS = exports.DEFAULT_RETRIES = exports.DEFAULT_TIMEOUT_MS = void 0;
+exports.MAX_REMOTE_REFERENCES = exports.REMOTE_BACKOFF_BASE_MS = exports.DEFAULT_RETRIES = exports.DEFAULT_TIMEOUT_MS = void 0;
 exports.validateRemoteReferences = validateRemoteReferences;
 exports.githubCommitApiUrl = githubCommitApiUrl;
 exports.githubApiBaseUrl = githubApiBaseUrl;
@@ -41710,16 +41710,26 @@ const redaction_1 = __nccwpck_require__(1066);
 exports.DEFAULT_TIMEOUT_MS = 5000;
 exports.DEFAULT_RETRIES = 1;
 exports.REMOTE_BACKOFF_BASE_MS = 100;
+exports.MAX_REMOTE_REFERENCES = 100;
 async function validateRemoteReferences(root, files, config) {
     const references = dedupeRemoteReferences(files.flatMap((file) => collectRemoteReferences(root, file)));
     const cache = new Map();
+    const skippedKeys = new Set();
     const findings = [];
     const apiBaseUrl = githubApiBaseUrl();
     const tokenDecision = githubTokenDecision(apiBaseUrl, config);
+    const diagnostics = [...tokenDecision.diagnostics];
     for (const reference of references) {
-        const key = `${reference.host}/${reference.owner}/${reference.repo}@${reference.sha}`.toLowerCase();
+        const key = remoteReferenceKey(reference);
         let result = cache.get(key);
         if (!result) {
+            if (cache.size >= exports.MAX_REMOTE_REFERENCES) {
+                if (!skippedKeys.has(key)) {
+                    skippedKeys.add(key);
+                    findings.push(remoteLimitFinding(reference));
+                }
+                continue;
+            }
             result = await validateGithubCommit(reference.owner, reference.repo, reference.sha, config, apiBaseUrl, tokenDecision.headers);
             cache.set(key, result);
         }
@@ -41730,7 +41740,12 @@ async function validateRemoteReferences(root, files, config) {
             findings.push(remoteFinding('remote/validation-error', reference, 'low', `Remote validation for '${reference.owner}/${reference.repo}@${reference.sha}' could not complete: ${result.message}.`, 'Retry later, adjust remote validation timeout/retry settings, or disable remote validation for offline/static-only runs.'));
         }
     }
-    return { findings, diagnostics: tokenDecision.diagnostics };
+    if (skippedKeys.size > 0) {
+        diagnostics.push({
+            message: `Remote validation limited to ${exports.MAX_REMOTE_REFERENCES} unique remote references (from ${cache.size + skippedKeys.size}) to protect CI runtime and API quotas.`
+        });
+    }
+    return { findings, diagnostics };
 }
 function collectRemoteReferences(root, file) {
     const absolutePath = node_path_1.default.join(root, file);
@@ -41921,6 +41936,9 @@ function remoteFinding(ruleId, reference, severity, message, remediation) {
         remediation
     };
 }
+function remoteLimitFinding(reference) {
+    return remoteFinding('remote/validation-error', reference, 'low', `Remote validation for '${reference.owner}/${reference.repo}@${reference.sha}' was skipped because the scan reached the ${exports.MAX_REMOTE_REFERENCES} unique remote reference limit.`, 'Reduce the number of unique remote references, split validation across smaller scans, or disable remote validation for offline/static-only runs.');
+}
 function dedupeRemoteReferences(references) {
     const seen = new Set();
     return references.filter((reference) => {
@@ -41931,6 +41949,9 @@ function dedupeRemoteReferences(references) {
         seen.add(key);
         return true;
     });
+}
+function remoteReferenceKey(reference) {
+    return `${reference.host}/${reference.owner}/${reference.repo}@${reference.sha}`.toLowerCase();
 }
 function parseYamlDocuments(content) {
     try {

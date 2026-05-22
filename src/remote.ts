@@ -35,6 +35,7 @@ interface RemoteTokenDecision {
 export const DEFAULT_TIMEOUT_MS = 5000
 export const DEFAULT_RETRIES = 1
 export const REMOTE_BACKOFF_BASE_MS = 100
+export const MAX_REMOTE_REFERENCES = 100
 
 export async function validateRemoteReferences(
   root: string,
@@ -45,15 +46,24 @@ export async function validateRemoteReferences(
     files.flatMap((file) => collectRemoteReferences(root, file))
   )
   const cache = new Map<string, ValidationResult>()
+  const skippedKeys = new Set<string>()
   const findings: Finding[] = []
   const apiBaseUrl = githubApiBaseUrl()
   const tokenDecision = githubTokenDecision(apiBaseUrl, config)
+  const diagnostics = [...tokenDecision.diagnostics]
 
   for (const reference of references) {
-    const key =
-      `${reference.host}/${reference.owner}/${reference.repo}@${reference.sha}`.toLowerCase()
+    const key = remoteReferenceKey(reference)
     let result = cache.get(key)
     if (!result) {
+      if (cache.size >= MAX_REMOTE_REFERENCES) {
+        if (!skippedKeys.has(key)) {
+          skippedKeys.add(key)
+          findings.push(remoteLimitFinding(reference))
+        }
+        continue
+      }
+
       result = await validateGithubCommit(
         reference.owner,
         reference.repo,
@@ -88,7 +98,13 @@ export async function validateRemoteReferences(
     }
   }
 
-  return { findings, diagnostics: tokenDecision.diagnostics }
+  if (skippedKeys.size > 0) {
+    diagnostics.push({
+      message: `Remote validation limited to ${MAX_REMOTE_REFERENCES} unique remote references (from ${cache.size + skippedKeys.size}) to protect CI runtime and API quotas.`
+    })
+  }
+
+  return { findings, diagnostics }
 }
 
 function collectRemoteReferences(root: string, file: string): RemoteReference[] {
@@ -346,6 +362,16 @@ function remoteFinding(
   }
 }
 
+function remoteLimitFinding(reference: RemoteReference): Finding {
+  return remoteFinding(
+    'remote/validation-error',
+    reference,
+    'low',
+    `Remote validation for '${reference.owner}/${reference.repo}@${reference.sha}' was skipped because the scan reached the ${MAX_REMOTE_REFERENCES} unique remote reference limit.`,
+    'Reduce the number of unique remote references, split validation across smaller scans, or disable remote validation for offline/static-only runs.'
+  )
+}
+
 function dedupeRemoteReferences(references: RemoteReference[]): RemoteReference[] {
   const seen = new Set<string>()
   return references.filter((reference) => {
@@ -357,6 +383,10 @@ function dedupeRemoteReferences(references: RemoteReference[]): RemoteReference[
     seen.add(key)
     return true
   })
+}
+
+function remoteReferenceKey(reference: RemoteReference): string {
+  return `${reference.host}/${reference.owner}/${reference.repo}@${reference.sha}`.toLowerCase()
 }
 
 function parseYamlDocuments(content: string): unknown[] {

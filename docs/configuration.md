@@ -172,7 +172,7 @@ Remote validation supports GitHub.com and GitHub Enterprise Server. In GitHub Ac
 
 Public commits can be checked without credentials. If `GITHUB_TOKEN` is available in the environment, the default `remote-token-policy: auto` sends it only to trusted HTTPS API hosts: `https://api.github.com` for GitHub.com, or an API host matching `GITHUB_SERVER_URL` for GitHub Enterprise Server. If the API URL is non-HTTPS or does not match the configured GitHub server, the token is omitted and the action emits a deterministic warning. Set `remote-token-policy: never` to omit `GITHUB_TOKEN` for all remote-validation requests.
 
-Enabling remote validation may disclose repository names and commit SHAs to the configured GitHub server and can add latency to CI runs. Sending `GITHUB_TOKEN` can improve rate limits and validate private repositories, but it is not required for public refs.
+Enabling remote validation may disclose repository names and commit SHAs to the configured GitHub server and can add latency to CI runs. Sending `GITHUB_TOKEN` can improve rate limits and validate private repositories, but it is not required for public refs. Each scan validates at most 100 unique remote references to protect CI runtime and API quotas. References beyond that limit produce low-severity `remote/validation-error` findings so enforce mode can fail instead of silently accepting unvalidated refs.
 
 ## Patch Output
 
