@@ -41578,6 +41578,102 @@ exports.SEVERITY_ORDER = {
 
 /***/ }),
 
+/***/ 8431:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.isSafeWorkspaceRelativePath = isSafeWorkspaceRelativePath;
+exports.normalizeWorkspaceRelativePath = normalizeWorkspaceRelativePath;
+exports.normalizeLexicalWorkspaceRelativePath = normalizeLexicalWorkspaceRelativePath;
+exports.realpathStaysInsideRoot = realpathStaysInsideRoot;
+exports.existingAncestorRealpathStaysInsideRoot = existingAncestorRealpathStaysInsideRoot;
+const node_fs_1 = __importDefault(__nccwpck_require__(3024));
+const node_path_1 = __importDefault(__nccwpck_require__(6760));
+function containsUnsafePathControlCharacter(value) {
+    return Array.from(value).some((character) => {
+        const code = character.charCodeAt(0);
+        return code <= 31 || code === 127;
+    });
+}
+function isSafeWorkspaceRelativePath(file) {
+    if (containsUnsafePathControlCharacter(file) || file.length === 0) {
+        return false;
+    }
+    if (node_path_1.default.isAbsolute(file) || node_path_1.default.win32.isAbsolute(file)) {
+        return false;
+    }
+    return !file
+        .replaceAll('\\', '/')
+        .split('/')
+        .some((segment) => segment === '..');
+}
+function normalizeWorkspaceRelativePath(root, file) {
+    const normalized = normalizeLexicalWorkspaceRelativePath(root, file);
+    if (!normalized) {
+        return undefined;
+    }
+    return realpathStaysInsideRoot(root, normalized) ? normalized : undefined;
+}
+function normalizeLexicalWorkspaceRelativePath(root, file) {
+    if (containsUnsafePathControlCharacter(file) || file.length === 0) {
+        return undefined;
+    }
+    if (node_path_1.default.isAbsolute(file) || node_path_1.default.win32.isAbsolute(file)) {
+        return undefined;
+    }
+    const resolvedRoot = node_path_1.default.resolve(root);
+    const resolved = node_path_1.default.resolve(resolvedRoot, file);
+    const relative = node_path_1.default.relative(resolvedRoot, resolved);
+    if (!isContainedRelativePath(relative)) {
+        return undefined;
+    }
+    return relative.split(node_path_1.default.sep).join('/');
+}
+function realpathStaysInsideRoot(root, file) {
+    try {
+        const realRoot = node_fs_1.default.realpathSync(root);
+        const realTarget = node_fs_1.default.realpathSync(node_path_1.default.join(root, file));
+        const relative = node_path_1.default.relative(realRoot, realTarget);
+        return relative.length === 0 || isContainedRelativePath(relative);
+    }
+    catch {
+        return false;
+    }
+}
+function existingAncestorRealpathStaysInsideRoot(root, target) {
+    let current = target;
+    while (!node_fs_1.default.existsSync(current)) {
+        const parent = node_path_1.default.dirname(current);
+        if (parent === current) {
+            return false;
+        }
+        current = parent;
+    }
+    try {
+        const realRoot = node_fs_1.default.realpathSync(root);
+        const realAncestor = node_fs_1.default.realpathSync(current);
+        const relative = node_path_1.default.relative(realRoot, realAncestor);
+        return relative.length === 0 || isContainedRelativePath(relative);
+    }
+    catch {
+        return false;
+    }
+}
+function isContainedRelativePath(relative) {
+    return (relative.length > 0 &&
+        relative !== '..' &&
+        !relative.startsWith(`..${node_path_1.default.sep}`) &&
+        !node_path_1.default.isAbsolute(relative));
+}
+
+
+/***/ }),
+
 /***/ 1066:
 /***/ ((__unused_webpack_module, exports) => {
 
@@ -42014,6 +42110,7 @@ exports.renderPatch = renderPatch;
 const node_fs_1 = __importDefault(__nccwpck_require__(3024));
 const node_crypto_1 = __importDefault(__nccwpck_require__(7598));
 const node_path_1 = __importDefault(__nccwpck_require__(6760));
+const paths_1 = __nccwpck_require__(8431);
 const redaction_1 = __nccwpck_require__(1066);
 const rules_1 = __nccwpck_require__(5755);
 const RULES_HELP_URI = 'https://github.com/bjcorder/deterministic-deps/blob/main/docs/rules.md';
@@ -42029,6 +42126,9 @@ function countBySeverity(findings) {
 }
 function writeReports(root, findings, writeSarif, writePatch = false) {
     const outputDir = node_path_1.default.join(root, 'deterministic-deps-report');
+    if (!(0, paths_1.existingAncestorRealpathStaysInsideRoot)(root, outputDir)) {
+        throw new Error('Report output directory must resolve inside the scan root.');
+    }
     node_fs_1.default.mkdirSync(outputDir, { recursive: true });
     const markdownPath = node_path_1.default.join(outputDir, 'report.md');
     node_fs_1.default.writeFileSync(markdownPath, renderMarkdown(findings), 'utf8');
@@ -42062,7 +42162,7 @@ function renderMarkdown(findings) {
     lines.push('| Severity | Rule | Ecosystem | Location | Message | Remediation |');
     lines.push('| --- | --- | --- | --- | --- | --- |');
     for (const finding of findings) {
-        lines.push(`| ${finding.severity} | ${finding.ruleId} | ${finding.ecosystem} | ${finding.file}:${finding.line} | ${escapeMarkdown((0, redaction_1.sanitizeDisplayValue)(finding.message))} | ${escapeMarkdown((0, redaction_1.sanitizeDisplayValue)(finding.remediation))} |`);
+        lines.push(`| ${finding.severity} | ${finding.ruleId} | ${finding.ecosystem} | ${escapeMarkdown((0, redaction_1.sanitizeDisplayValue)(finding.file))}:${finding.line} | ${escapeMarkdown((0, redaction_1.sanitizeDisplayValue)(finding.message))} | ${escapeMarkdown((0, redaction_1.sanitizeDisplayValue)(finding.remediation))} |`);
     }
     const suggestions = findings.filter((finding) => finding.suggestion);
     if (suggestions.length > 0) {
@@ -42073,7 +42173,7 @@ function renderMarkdown(findings) {
                 continue;
             }
             const replacement = safeReplacement(finding);
-            lines.push(`- ${finding.file}:${finding.line} ${escapeMarkdown((0, redaction_1.sanitizeDisplayValue)(suggestion.title))} (confidence: ${suggestion.confidence}; safe patch: ${replacement ? 'yes' : 'no'})`);
+            lines.push(`- ${escapeMarkdown((0, redaction_1.sanitizeDisplayValue)(finding.file))}:${finding.line} ${escapeMarkdown((0, redaction_1.sanitizeDisplayValue)(suggestion.title))} (confidence: ${suggestion.confidence}; safe patch: ${replacement ? 'yes' : 'no'})`);
             if (replacement) {
                 lines.push(`  - Replace line ${replacement.line} with: \`${escapeMarkdown((0, redaction_1.sanitizeDisplayValue)(replacement.newText))}\``);
             }
@@ -42122,7 +42222,10 @@ function renderSarif(findings) {
                         }
                     };
                     const replacement = safeReplacement(finding);
-                    if (replacement) {
+                    if (replacement &&
+                        finding.file === replacement.file &&
+                        finding.line === replacement.line &&
+                        replacement.oldText.length > 0) {
                         result.fixes = [
                             {
                                 description: {
@@ -42211,13 +42314,21 @@ function renderPatch(root, findings) {
     const replacements = findings
         .map((finding) => safeReplacement(finding))
         .filter((replacement) => Boolean(replacement))
-        .filter((replacement) => replacementMatchesFile(root, replacement));
+        .map((replacement) => {
+        const safeFile = (0, paths_1.normalizeWorkspaceRelativePath)(root, replacement.file);
+        if (!safeFile) {
+            return undefined;
+        }
+        return { replacement, safeFile };
+    })
+        .filter((value) => Boolean(value))
+        .filter(({ replacement, safeFile }) => replacementMatchesFile(root, safeFile, replacement));
     if (replacements.length === 0) {
         return '';
     }
     const lines = [];
-    for (const replacement of replacements) {
-        lines.push(`diff --git a/${replacement.file} b/${replacement.file}`, `--- a/${replacement.file}`, `+++ b/${replacement.file}`, `@@ -${replacement.line},1 +${replacement.line},1 @@`, `-${replacement.oldText}`, `+${replacement.newText}`);
+    for (const { replacement, safeFile } of replacements) {
+        lines.push(`diff --git a/${safeFile} b/${safeFile}`, `--- a/${safeFile}`, `+++ b/${safeFile}`, `@@ -${replacement.line},1 +${replacement.line},1 @@`, `-${replacement.oldText}`, `+${replacement.newText}`);
     }
     lines.push('');
     return lines.join('\n');
@@ -42227,7 +42338,9 @@ function safeReplacement(finding) {
     if (!suggestion?.safeToApply || !suggestion.replacement) {
         return undefined;
     }
-    if (replacementContainsCredentialMaterial(suggestion.replacement)) {
+    if (!(0, paths_1.isSafeWorkspaceRelativePath)(suggestion.replacement.file) ||
+        replacementContainsUnsafeLineText(suggestion.replacement) ||
+        replacementContainsCredentialMaterial(suggestion.replacement)) {
         return undefined;
     }
     return suggestion.replacement;
@@ -42236,8 +42349,11 @@ function replacementContainsCredentialMaterial(replacement) {
     return ((0, redaction_1.containsCredentialMaterial)(replacement.oldText) ||
         (0, redaction_1.containsCredentialMaterial)(replacement.newText));
 }
-function replacementMatchesFile(root, replacement) {
-    const filePath = node_path_1.default.join(root, replacement.file);
+function replacementContainsUnsafeLineText(replacement) {
+    return /[\r\n]/.test(replacement.oldText) || /[\r\n]/.test(replacement.newText);
+}
+function replacementMatchesFile(root, safeFile, replacement) {
+    const filePath = node_path_1.default.join(root, safeFile);
     if (!node_fs_1.default.existsSync(filePath)) {
         return false;
     }
@@ -42254,7 +42370,7 @@ function sarifLevel(severity) {
     return 'note';
 }
 function escapeMarkdown(value) {
-    return value.replaceAll('|', '\\|').replaceAll('\n', ' ');
+    return value.replaceAll('|', '\\|').replaceAll('`', '\\`').replaceAll('\n', ' ');
 }
 
 
@@ -44113,9 +44229,11 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.scan = scan;
 exports.discoverFiles = discoverFiles;
 exports.resolveScanRoot = resolveScanRoot;
+const node_fs_1 = __importDefault(__nccwpck_require__(3024));
 const node_path_1 = __importDefault(__nccwpck_require__(6760));
 const glob_1 = __nccwpck_require__(8941);
 const constants_1 = __nccwpck_require__(7242);
+const paths_1 = __nccwpck_require__(8431);
 const remote_1 = __nccwpck_require__(6473);
 const rules_1 = __nccwpck_require__(5755);
 async function scan(options) {
@@ -44144,13 +44262,22 @@ async function discoverFiles(root, include = constants_1.DEFAULT_INCLUDE, exclud
         ignore,
         windowsPathsNoEscape: true
     });
-    return Array.from(new Set(files.map((file) => normalizePath(file)))).sort();
+    return Array.from(new Set(files
+        .map((file) => (0, paths_1.normalizeWorkspaceRelativePath)(root, file))
+        .filter((file) => Boolean(file)))).sort();
 }
 function resolveScanRoot(workspace, requestedPath) {
-    return node_path_1.default.resolve(workspace, requestedPath || '.');
-}
-function normalizePath(file) {
-    return file.split(node_path_1.default.sep).join('/');
+    const resolvedWorkspace = node_path_1.default.resolve(workspace);
+    const resolved = node_path_1.default.resolve(resolvedWorkspace, requestedPath || '.');
+    const relative = node_path_1.default.relative(resolvedWorkspace, resolved);
+    if (relative === '..' || relative.startsWith(`..${node_path_1.default.sep}`) || node_path_1.default.isAbsolute(relative)) {
+        throw new Error(`Scan path must resolve inside GITHUB_WORKSPACE: ${requestedPath || '.'}`);
+    }
+    if (!(0, paths_1.existingAncestorRealpathStaysInsideRoot)(resolvedWorkspace, resolved)) {
+        throw new Error(`Scan path must resolve inside GITHUB_WORKSPACE: ${requestedPath || '.'}`);
+    }
+    node_fs_1.default.mkdirSync(resolved, { recursive: true });
+    return node_fs_1.default.realpathSync(resolved);
 }
 
 

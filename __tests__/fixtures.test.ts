@@ -347,4 +347,35 @@ describe('golden reports', () => {
     expect(reports.patchPath).toBeDefined()
     expect(fs.readFileSync(reports.patchPath ?? '', 'utf8')).toContain('diff --git')
   })
+
+  it('skips patch output when replacement file path contains control characters', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'deterministic-deps-report-'))
+    const unsafeFile = 'safe-prefix\ninjected/Cargo.toml'
+    const patch = renderPatch(root, [
+      {
+        ruleId: 'rust/git-rev-sha',
+        severity: 'medium',
+        ecosystem: 'rust',
+        file: unsafeFile,
+        line: 2,
+        message: 'Dependency is not pinned.',
+        remediation: 'Pin dependency.',
+        suggestion: {
+          title: 'Add explicit Cargo rev.',
+          confidence: 'high',
+          safeToApply: true,
+          replacement: {
+            file: unsafeFile,
+            line: 2,
+            oldText:
+              'demo = { git = "https://github.com/acme/demo.git?rev=0123456789abcdef0123456789abcdef01234567" }',
+            newText:
+              'demo = { git = "https://github.com/acme/demo.git?rev=0123456789abcdef0123456789abcdef01234567", rev = "0123456789abcdef0123456789abcdef01234567" }'
+          }
+        }
+      }
+    ])
+
+    expect(patch).toBe('')
+  })
 })

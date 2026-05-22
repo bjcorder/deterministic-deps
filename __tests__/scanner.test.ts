@@ -4,7 +4,7 @@ import path from 'node:path'
 import { afterEach } from '@jest/globals'
 import { renderMarkdown, renderPatch, renderSarif } from '../src/report'
 import { MAX_REMOTE_REFERENCES } from '../src/remote'
-import { scan } from '../src/scanner'
+import { resolveScanRoot, scan } from '../src/scanner'
 import { shouldReportFailure } from '../src/rules'
 import { Finding } from '../src/types'
 
@@ -26,6 +26,49 @@ describe('deterministic-deps scanner', () => {
     delete process.env.GITHUB_TOKEN
     delete process.env.GITHUB_API_URL
     delete process.env.GITHUB_SERVER_URL
+  })
+
+  it('keeps the scan root inside the workspace', () => {
+    const workspace = tempRepo()
+    const outside = tempRepo()
+    fs.symlinkSync(outside, path.join(workspace, 'outside-link'), 'dir')
+
+    expect(resolveScanRoot(workspace, '.')).toBe(fs.realpathSync(workspace))
+    expect(resolveScanRoot(workspace, 'nested')).toBe(
+      fs.realpathSync(path.join(workspace, 'nested'))
+    )
+    expect(() => resolveScanRoot(workspace, '..')).toThrow(
+      'Scan path must resolve inside GITHUB_WORKSPACE'
+    )
+    expect(() => resolveScanRoot(workspace, 'outside-link')).toThrow(
+      'Scan path must resolve inside GITHUB_WORKSPACE'
+    )
+    expect(() => resolveScanRoot(workspace, 'outside-link/newdir')).toThrow(
+      'Scan path must resolve inside GITHUB_WORKSPACE'
+    )
+    expect(fs.existsSync(path.join(outside, 'newdir'))).toBe(false)
+  })
+
+  it('ignores include patterns that resolve outside the scan root', async () => {
+    const parent = tempRepo()
+    const root = path.join(parent, 'repo')
+    fs.mkdirSync(root)
+    write(
+      parent,
+      'outside/package.json',
+      JSON.stringify({ dependencies: { leftpad: '^1.0.0' } }, null, 2)
+    )
+    fs.symlinkSync(path.join(parent, 'outside'), path.join(root, 'outside-link'), 'dir')
+
+    const result = await scan({
+      root,
+      include: ['../outside/package.json', 'outside-link/package.json'],
+      exclude: [],
+      config: {}
+    })
+
+    expect(result.scannedFiles).toEqual([])
+    expect(result.findings).toEqual([])
   })
 
   it('flags broad non-deterministic dependency declarations', async () => {
