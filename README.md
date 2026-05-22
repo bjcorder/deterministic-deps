@@ -50,7 +50,7 @@ before pinning a validated version.
 To fail builds once findings are actionable:
 
 ```yaml
-- uses: Ozark-Security-Labs/deterministic-deps@v1
+- uses: Ozark-Security-Labs/deterministic-deps@<full-length-commit-sha>
   with:
     mode: enforce
     severity-threshold: medium
@@ -107,7 +107,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - id: deterministic-deps
-        uses: Ozark-Security-Labs/deterministic-deps@v1
+        uses: Ozark-Security-Labs/deterministic-deps@<full-length-commit-sha>
         continue-on-error: true
         with:
           mode: enforce
@@ -124,7 +124,7 @@ jobs:
 ```
 
 The Marketplace entrypoint is `Ozark-Security-Labs/deterministic-deps@v1`. For workflows that
-enforce policy, pin to the full commit SHA for the validated release behind `v1`. See
+enforce policy, pin to a full commit SHA for the validated release. See
 [docs/sarif.md](docs/sarif.md) for permissions, private repository notes, SARIF upload, and report
 path details.
 
