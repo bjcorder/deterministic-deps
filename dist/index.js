@@ -43455,11 +43455,17 @@ function checkRuby(context) {
         findings.push(finding('ruby/lockfile-required', 'ruby', context.file, 1, 'high', 'Gemfile was found without Gemfile.lock.', 'Commit Gemfile.lock so resolved gem versions are deterministic.'));
     }
     for (const gem of parseRubyGemEntries(context.lines)) {
-        if (/\bgit:/.test(gem.text) && !/\bref:\s*['"][a-f0-9]{40}['"]/i.test(gem.text)) {
+        if (rubyGemHasGitSource(gem.text) && !rubyGemHasPinnedRef(gem.text)) {
             findings.push(finding('ruby/git-ref-sha', 'ruby', context.file, gem.line, 'high', `Ruby git dependency '${gem.text}' does not pin a ref commit SHA.`, 'Add ref: "<40-character commit SHA>" to git dependencies.'));
         }
     }
     return findings;
+}
+function rubyGemHasGitSource(text) {
+    return /(?:\bgit:|:git\s*=>)/.test(text);
+}
+function rubyGemHasPinnedRef(text) {
+    return /(?:\bref:\s*|:ref\s*=>\s*)['"][a-f0-9]{40}['"]/i.test(text);
 }
 function parseRubyGemEntries(lines) {
     const entries = [];
@@ -43471,8 +43477,8 @@ function parseRubyGemEntries(lines) {
         }
         if (active) {
             active.text = `${active.text} ${stripped}`.replace(/\s+/g, ' ');
-            active.parenDepth += parenDelta(stripped);
-            if (active.parenDepth <= 0 && !/,\s*$/.test(stripped)) {
+            active.nestingDepth += nestingDelta(stripped);
+            if (active.nestingDepth <= 0 && !continuesRubyGemEntry(stripped)) {
                 entries.push({
                     text: active.text,
                     line: active.line
@@ -43484,12 +43490,12 @@ function parseRubyGemEntries(lines) {
         if (!/^gem(?:\s+|\()/.test(stripped)) {
             return;
         }
-        const parenDepth = parenDelta(stripped);
-        if (parenDepth > 0 || /,\s*$/.test(stripped)) {
+        const nestingDepth = nestingDelta(stripped);
+        if (nestingDepth > 0 || continuesRubyGemEntry(stripped)) {
             active = {
                 text: stripped,
                 line: index + 1,
-                parenDepth
+                nestingDepth
             };
             return;
         }
@@ -43521,7 +43527,10 @@ function stripRubyComment(line) {
     }
     return line;
 }
-function parenDelta(line) {
+function continuesRubyGemEntry(line) {
+    return /(?:,|\\)\s*$/.test(line);
+}
+function nestingDelta(line) {
     let quote;
     let delta = 0;
     for (let index = 0; index < line.length; index += 1) {
@@ -43534,10 +43543,10 @@ function parenDelta(line) {
         if (quote) {
             continue;
         }
-        if (current === '(') {
+        if (current === '(' || current === '{' || current === '[') {
             delta += 1;
         }
-        else if (current === ')') {
+        else if (current === ')' || current === '}' || current === ']') {
             delta -= 1;
         }
     }

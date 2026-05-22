@@ -1854,7 +1854,7 @@ function checkRuby(context: FileContext): Finding[] {
   }
 
   for (const gem of parseRubyGemEntries(context.lines)) {
-    if (/\bgit:/.test(gem.text) && !/\bref:\s*['"][a-f0-9]{40}['"]/i.test(gem.text)) {
+    if (rubyGemHasGitSource(gem.text) && !rubyGemHasPinnedRef(gem.text)) {
       findings.push(
         finding(
           'ruby/git-ref-sha',
@@ -1872,13 +1872,21 @@ function checkRuby(context: FileContext): Finding[] {
   return findings
 }
 
+function rubyGemHasGitSource(text: string): boolean {
+  return /(?:\bgit:|:git\s*=>)/.test(text)
+}
+
+function rubyGemHasPinnedRef(text: string): boolean {
+  return /(?:\bref:\s*|:ref\s*=>\s*)['"][a-f0-9]{40}['"]/i.test(text)
+}
+
 function parseRubyGemEntries(lines: string[]): RubyGemEntry[] {
   const entries: RubyGemEntry[] = []
   let active:
     | {
         text: string
         line: number
-        parenDepth: number
+        nestingDepth: number
       }
     | undefined
 
@@ -1890,8 +1898,8 @@ function parseRubyGemEntries(lines: string[]): RubyGemEntry[] {
 
     if (active) {
       active.text = `${active.text} ${stripped}`.replace(/\s+/g, ' ')
-      active.parenDepth += parenDelta(stripped)
-      if (active.parenDepth <= 0 && !/,\s*$/.test(stripped)) {
+      active.nestingDepth += nestingDelta(stripped)
+      if (active.nestingDepth <= 0 && !continuesRubyGemEntry(stripped)) {
         entries.push({
           text: active.text,
           line: active.line
@@ -1905,12 +1913,12 @@ function parseRubyGemEntries(lines: string[]): RubyGemEntry[] {
       return
     }
 
-    const parenDepth = parenDelta(stripped)
-    if (parenDepth > 0 || /,\s*$/.test(stripped)) {
+    const nestingDepth = nestingDelta(stripped)
+    if (nestingDepth > 0 || continuesRubyGemEntry(stripped)) {
       active = {
         text: stripped,
         line: index + 1,
-        parenDepth
+        nestingDepth
       }
       return
     }
@@ -1951,7 +1959,11 @@ function stripRubyComment(line: string): string {
   return line
 }
 
-function parenDelta(line: string): number {
+function continuesRubyGemEntry(line: string): boolean {
+  return /(?:,|\\)\s*$/.test(line)
+}
+
+function nestingDelta(line: string): number {
   let quote: '"' | "'" | undefined
   let delta = 0
 
@@ -1968,9 +1980,9 @@ function parenDelta(line: string): number {
       continue
     }
 
-    if (current === '(') {
+    if (current === '(' || current === '{' || current === '[') {
       delta += 1
-    } else if (current === ')') {
+    } else if (current === ')' || current === '}' || current === ']') {
       delta -= 1
     }
   }
